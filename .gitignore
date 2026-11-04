@@ -10,6 +10,8 @@ out/
 *.tsbuildinfo
 dist/
 
+.agents/
+
 # go
 /server/bin/
 /cli/bin/
