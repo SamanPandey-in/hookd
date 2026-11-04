@@ -1,0 +1,360 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Commit Mono — the dominant texture for all data/numbers (DESIGN §3). */
+@import "@fontsource/commit-mono/400.css";
+@import "@fontsource/commit-mono/500.css";
+@import "@fontsource/commit-mono/600.css";
+
+/* =============================================================================
+   Graphite & Signal — the design tokens (DESIGN.md §2).
+   Dark is the default on :root. Light applies when the user picks it
+   ([data-theme="light"]) or when the OS prefers light and nothing forces dark.
+   next-themes writes data-theme; the media query covers the no-JS case.
+   ========================================================================== */
+:root {
+  --bg: #0b0d0f; /* page base — cool near-black, not #000 (avoids OLED smear) */
+  --surface: #14171a; /* panels, stream list, detail pane */
+  --surface-hi: #1c2024; /* row hover / selected / input fields */
+  --border: #262b30; /* hairline separators — do the work shadows usually do */
+  --text: #e6e9ed; /* primary text */
+  --muted: #8b949e; /* timestamps, metadata, secondary labels */
+
+  --accent: #b8ff2e; /* THE hue: accent text / glyph / verified / live pulse */
+  --accent-fill: #b8ff2e; /* bright fill for primary action + pass rule */
+  --on-accent: #0b0d0f; /* dark ink on an accent fill */
+
+  /* semantic status trio — the ONLY other colors allowed */
+  --pass: #b8ff2e; /* signature valid, 2xx (accent doubles as pass) */
+  --fail: #ff5c5c; /* signature invalid, 4xx/5xx, delivery failed */
+  --warn: #ffb224; /* awaiting delivery, retrying, 3xx, replayed */
+
+  --ring: var(--accent); /* focus ring */
+}
+
+/* Light tokens (DESIGN §2 light). Status colors are darkened only for AA
+   contrast on white — same semantics, still one hue + the trio.
+   `hookd-light` is the picker id; `light` is kept as a back-compat alias. */
+:root[data-theme="light"],
+:root[data-theme="hookd-light"] {
+  --bg: #f7f8f8; /* cool off-white — explicitly NOT cream #F4F1EA */
+  --surface: #ffffff;
+  --surface-hi: #eef0f1;
+  --border: #e4e7ea;
+  --text: #11161a;
+  --muted: #5b646c;
+
+  --accent: #3f6212; /* lime darkened for AA as text/links on white */
+  --accent-fill: #b8ff2e; /* bright fill, always paired with dark ink */
+  --on-accent: #11161a;
+
+  --pass: #3f6212;
+  --fail: #d62828;
+  --warn: #9a5b00;
+
+  --ring: #3f6212;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="light"]) {
+    --bg: #f7f8f8;
+    --surface: #ffffff;
+    --surface-hi: #eef0f1;
+    --border: #e4e7ea;
+    --text: #11161a;
+    --muted: #5b646c;
+    --accent: #3f6212;
+    --accent-fill: #b8ff2e;
+    --on-accent: #11161a;
+    --pass: #3f6212;
+    --fail: #d62828;
+    --warn: #9a5b00;
+    --ring: #3f6212;
+  }
+}
+
+/* =============================================================================
+   Market themes — recognizable dev palettes, mapped onto the SAME token set so
+   the whole app (bg, panels, accent, grid, aura, status trio) re-skins from one
+   switch. All are dark, so color-scheme stays dark (the :root default). Accent
+   reads fine as text on each bg; buttons use accent-fill + on-accent (the dark
+   bg) exactly as hookd does. Hexes match lib/theme.ts swatches 1:1.
+   ========================================================================== */
+:root[data-theme="dracula"] {
+  --bg: #282a36;
+  --surface: #2d2f3d;
+  --surface-hi: #343746;
+  --border: #44475a;
+  --text: #f8f8f2;
+  --muted: #6272a4;
+  --accent: #bd93f9;
+  --accent-fill: #bd93f9;
+  --on-accent: #282a36;
+  --pass: #50fa7b;
+  --fail: #ff5555;
+  --warn: #ffb86c;
+  --ring: var(--accent);
+}
+
+:root[data-theme="nord"] {
+  --bg: #2e3440;
+  --surface: #343b49;
+  --surface-hi: #3b4252;
+  --border: #434c5e;
+  --text: #eceff4;
+  --muted: #7b88a1;
+  --accent: #88c0d0;
+  --accent-fill: #88c0d0;
+  --on-accent: #2e3440;
+  --pass: #a3be8c;
+  --fail: #bf616a;
+  --warn: #ebcb8b;
+  --ring: var(--accent);
+}
+
+:root[data-theme="tokyo-night"] {
+  --bg: #1a1b26;
+  --surface: #24283b;
+  --surface-hi: #292e42;
+  --border: #2f334d;
+  --text: #c0caf5;
+  --muted: #565f89;
+  --accent: #7aa2f7;
+  --accent-fill: #7aa2f7;
+  --on-accent: #1a1b26;
+  --pass: #9ece6a;
+  --fail: #f7768e;
+  --warn: #e0af68;
+  --ring: var(--accent);
+}
+
+:root[data-theme="catppuccin"] {
+  --bg: #1e1e2e;
+  --surface: #313244;
+  --surface-hi: #45475a;
+  --border: #45475a;
+  --text: #cdd6f4;
+  --muted: #7f849c;
+  --accent: #cba6f7;
+  --accent-fill: #cba6f7;
+  --on-accent: #1e1e2e;
+  --pass: #a6e3a1;
+  --fail: #f38ba8;
+  --warn: #f9e2af;
+  --ring: var(--accent);
+}
+
+/* Map tokens into the Tailwind v4 theme so utilities resolve to them:
+   bg-bg, bg-surface, bg-surface-hi, border-border, text-text, text-muted,
+   text-accent, bg-accent-fill, text-on-accent, text-pass/fail/warn,
+   rounded-sm (3px), rounded-md (6px), font-sans, font-mono. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-hi: var(--surface-hi);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fill: var(--accent-fill);
+  --color-on-accent: var(--on-accent);
+  --color-pass: var(--pass);
+  --color-fail: var(--fail);
+  --color-warn: var(--warn);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Commit Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo,
+    monospace;
+
+  /* One radius scale only: 3px controls, 6px panels (DESIGN §4). */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+
+  /* Two motion durations only (DESIGN §7). */
+  --duration-fast: 80ms;
+  --duration-base: 170ms;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  :root {
+    color-scheme: dark;
+  }
+  :root[data-theme="light"],
+  :root[data-theme="hookd-light"] {
+    color-scheme: light;
+  }
+  html {
+    font-family: var(--font-sans);
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Visible keyboard focus everywhere (DESIGN §10). */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  /* Tabular figures for all data — numbers line up in columns. */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "zero" 1;
+  }
+}
+
+@layer utilities {
+  /* Status tint: a low-alpha wash of a status color over the surface, for the
+     "tinted-on-tint" badges (DESIGN §6). Pass --tint to pick the color. */
+  .status-tint {
+    background-color: color-mix(in oklab, var(--tint) 14%, transparent);
+    color: var(--tint);
+  }
+  /* The hero's lime left-rule for a PASS verify panel. */
+  .rule-pass {
+    box-shadow: inset 3px 0 0 0 var(--pass);
+  }
+  .rule-fail {
+    box-shadow: inset 3px 0 0 0 var(--fail);
+  }
+  .rule-warn {
+    box-shadow: inset 3px 0 0 0 var(--warn);
+  }
+
+  /* --- Instrument depth (art direction) ---------------------------------
+     A faint graph-paper grid gives the near-black canvas the feel of an
+     instrument panel instead of a flat void. Lines are the border token at
+     low alpha — texture, not a decorative wash. */
+  .bg-signal-grid {
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in oklab, var(--border) 60%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--border) 60%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 44px 44px;
+  }
+  /* A finer dotted matrix, for tighter panels. */
+  .bg-signal-dots {
+    background-image: radial-gradient(
+      color-mix(in oklab, var(--border) 85%, transparent) 1px,
+      transparent 1px
+    );
+    background-size: 22px 22px;
+  }
+  /* The single purposeful glow: lights the product. Used once, behind the
+     hero inspector — the one place boldness is spent, per the contract. */
+  .aura-accent {
+    background: radial-gradient(
+      50% 50% at 50% 45%,
+      color-mix(in oklab, var(--accent) 22%, transparent),
+      transparent 72%
+    );
+  }
+  /* A hairline tick used to anchor section labels to the grid. */
+  .tick-accent {
+    box-shadow: inset 0 2px 0 0 var(--accent);
+  }
+}
+
+/* ---- Motion (DESIGN §7) --------------------------------------------------
+   The ONLY ambient motion: a new webhook row slides in + a single accent
+   left-edge pulse fading over ~400ms. The verify check draws in once (~180ms),
+   never looping. Tab switches are instant (≤80ms). */
+
+@keyframes arrival-slide {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes arrival-pulse {
+  0% {
+    box-shadow: inset 2px 0 0 0 var(--accent);
+    background-color: color-mix(in oklab, var(--accent) 10%, transparent);
+  }
+  100% {
+    box-shadow: inset 2px 0 0 0 transparent;
+    background-color: transparent;
+  }
+}
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 22;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-arrival {
+  animation:
+    arrival-slide var(--duration-base) ease-out,
+    arrival-pulse 400ms ease-out;
+}
+.animate-check {
+  stroke-dasharray: 22;
+  animation: check-draw var(--duration-base) ease-out forwards;
+}
+.animate-live {
+  animation: live-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-arrival,
+  .animate-check,
+  .animate-live {
+    animation: none !important;
+  }
+  .animate-check {
+    stroke-dashoffset: 0;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Thin, graphite scrollbars inside panels. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--text) 16%, transparent) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--text) 16%, transparent);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--text) 26%, transparent);
+}

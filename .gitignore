@@ -1,0 +1,29 @@
+# secrets / env
+.env
+.env.*
+!.env.example
+
+# node / next
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+dist/
+
+# go
+/server/bin/
+/cli/bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# logs / tmp
+*.log
+tmp/

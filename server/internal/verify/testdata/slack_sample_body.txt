@@ -1,0 +1,1 @@
+token=xyz&team_id=T1&command=/weather&text=today
