@@ -1,0 +1,39 @@
+# One-command EC2 deploy: the hookd API behind Caddy (automatic HTTPS).
+#   1. Fill ./.env from .env.example (DATABASE_URL, keys, OAuth, ALLOWED_ORIGIN,
+#      COOKIE_SECURE=true, COOKIE_SAMESITE=none, GITHUB_CALLBACK_URL, …).
+#   2. Set API_DOMAIN below to your real API hostname.
+#   3. Point that DNS A record at this instance; open ports 80 + 443 (+ 22).
+#   4. docker compose up -d --build
+#      docker compose logs -f
+# The server runs migrations on boot; restart:always keeps it always-on.
+
+services:
+  api:
+    build: .
+    env_file: ./.env
+    # Only Caddy is published; the API is reachable on the internal compose net
+    # at api:8099 (see UPSTREAM below).
+    expose:
+      - "8099"
+    restart: always
+
+  caddy:
+    image: caddy:2
+    restart: always
+    depends_on:
+      - api
+    environment:
+      # Caddy's Caddyfile reads these: proxy to the api container, serve this host.
+      API_DOMAIN: api.your-domain.com
+      UPSTREAM: api:8099
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,44 @@
+# systemd unit for the hookd backend on EC2 (the non-Docker path).
+# Restart=always keeps it running forever ("no sleeping"); it starts on boot.
+#
+# Install:
+#   sudo cp whook.service /etc/systemd/system/whook.service
+#   sudo mkdir -p /opt/whook && sudo cp /path/to/server /opt/whook/server
+#   sudo cp .env /opt/whook/.env         # your filled-in env (chmod 600, root-owned)
+#   sudo chmod 600 /opt/whook/.env
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now whook
+#   sudo systemctl status whook
+#   journalctl -u whook -f               # follow logs
+
+[Unit]
+Description=hookd webhook debugger API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as a dedicated unprivileged user; create it once:
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin whook
+User=whook
+Group=whook
+WorkingDirectory=/opt/whook
+# Config is loaded from this file (KEY=VALUE lines). The binary also reads a
+# local .env in WorkingDirectory, but EnvironmentFile is the systemd-native way.
+EnvironmentFile=/opt/whook/.env
+ExecStart=/opt/whook/server
+Restart=always
+RestartSec=2
+# Graceful shutdown: the server traps SIGTERM and drains within 10s.
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+# Hardening.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/whook
+
+[Install]
+WantedBy=multi-user.target

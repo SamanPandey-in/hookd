@@ -6,6 +6,40 @@ import (
 	"testing"
 )
 
+func TestEnforceOriginCSRF(t *testing.T) {
+	const allowed = "https://app.example.com"
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := EnforceOrigin(allowed)(ok)
+
+	cases := []struct {
+		name   string
+		method string
+		origin string // "" = header absent
+		want   int
+	}{
+		{"get safe no origin", http.MethodGet, "", http.StatusOK},
+		{"get safe foreign origin", http.MethodGet, "https://evil.com", http.StatusOK},
+		{"post no origin (api-key client)", http.MethodPost, "", http.StatusOK},
+		{"post same origin (real frontend)", http.MethodPost, allowed, http.StatusOK},
+		{"post foreign origin (CSRF)", http.MethodPost, "https://evil.com", http.StatusForbidden},
+		{"delete foreign origin (CSRF)", http.MethodDelete, "https://evil.com", http.StatusForbidden},
+		{"post null origin (sandboxed)", http.MethodPost, "null", http.StatusForbidden},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := httptest.NewRequest(c.method, "/api/endpoints", nil)
+			if c.origin != "" {
+				req.Header.Set("Origin", c.origin)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != c.want {
+				t.Fatalf("%s %s origin=%q: got %d, want %d", c.method, "/api/endpoints", c.origin, rec.Code, c.want)
+			}
+		})
+	}
+}
+
 func TestClientIPForwardedFor(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "10.0.0.9:1234"

@@ -136,6 +136,32 @@ func CORS(allowedOrigin string) func(http.Handler) http.Handler {
 	}
 }
 
+// EnforceOrigin is a CSRF defense for cookie-authenticated, state-changing
+// requests. The session cookie is cross-site (SameSite=None), so a browser will
+// attach it to requests initiated by any site; CORS blocks READING our response
+// but not the side effect of a "simple" request (e.g. a text/plain POST whose
+// body still decodes as JSON, which skips the preflight that already protects
+// PUT/PATCH/DELETE). We therefore reject any unsafe-method request whose Origin
+// header is present and not the allowed frontend. Legitimate non-browser clients
+// (API keys) send no Origin header and are unaffected; the real frontend always
+// sends Origin on its cross-site calls and passes.
+func EnforceOrigin(allowedOrigin string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				// Safe methods and preflight carry no state change.
+			default:
+				if o := r.Header.Get("Origin"); o != "" && o != allowedOrigin {
+					Error(w, http.StatusForbidden, "cross-origin request blocked")
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // ClientIP returns the best-effort client IP, honoring a single X-Forwarded-For
 // hop (the server runs behind one trusted proxy/load balancer in production).
 func ClientIP(r *http.Request) string {

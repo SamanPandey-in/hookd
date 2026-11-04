@@ -1,0 +1,24 @@
+# Caddy reverse proxy for the hookd API — automatic HTTPS (Let's Encrypt) and
+# streaming-friendly for Server-Sent Events. One file serves both deploy paths:
+#
+#   • native / systemd : Caddy and the server share the host  → upstream
+#     defaults to 127.0.0.1:8099. Just set the domain and reload:
+#       sudo cp Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#   • docker compose    : the API is a separate container → compose sets
+#     UPSTREAM=api:8099 and API_DOMAIN via environment (see docker-compose.yml).
+#
+# The placeholders read environment with a fallback: {$VAR:default}.
+# Caddy provisions and renews the TLS cert automatically (ports 80 + 443 open,
+# DNS A record pointing here, a real domain in API_DOMAIN).
+
+{$API_DOMAIN:api.your-domain.com} {
+	encode zstd gzip
+
+	reverse_proxy {$UPSTREAM:127.0.0.1:8099} {
+		# Stream SSE immediately instead of buffering (the /api/.../stream route).
+		flush_interval -1
+		# Pass the real client IP so the server's per-IP rate limit and
+		# X-Forwarded-For handling see the true origin.
+		header_up X-Forwarded-For {remote_host}
+	}
+}

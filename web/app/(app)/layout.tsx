@@ -66,6 +66,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="bg-signal-grid absolute inset-0 opacity-[0.22] [mask-image:linear-gradient(to_bottom,black,transparent_85%)]" />
         <div className="aura-accent absolute left-1/2 top-[-18%] h-[360px] w-[820px] -translate-x-1/2 opacity-30" />
       </div>
+      {/* The whole app shell is client + auth-gated and reads runtime-only
+          values (usePathname in the command bar and settings rail), so it is
+          never meaningfully static. One Suspense boundary lets those stream in
+          after prerender instead of blocking the build (Next 16 Cache Components). */}
+      <React.Suspense fallback={<ShellFallback />}>
       <div className="relative z-10 flex min-h-screen flex-col">
       <CommandBar
         right={
@@ -98,6 +103,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         )}
       </main>
       </div>
+      </React.Suspense>
+    </div>
+  );
+}
+
+/** Prerender-time placeholder for the auth-gated app shell: the command-bar
+ *  hairline plus a calm loading panel, matching the real layout's dimensions so
+ *  there is no shift when the client shell streams in. */
+function ShellFallback() {
+  return (
+    <div className="relative z-10 flex min-h-screen flex-col">
+      <header className="sticky top-0 z-30 flex h-14 items-center border-b border-border bg-bg/80 px-4 backdrop-blur-md" />
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+        <div className="h-40 animate-pulse rounded-md border border-border bg-surface" />
+      </main>
     </div>
   );
 }

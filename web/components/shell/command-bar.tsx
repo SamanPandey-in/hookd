@@ -18,12 +18,17 @@ const NAV: { href: string; label: string; match: (p: string) => boolean }[] = [
     match: (p) => p === "/app" || p.startsWith("/app/"),
   },
   {
+    href: "/docs",
+    label: "docs",
+    match: (p) => p.startsWith("/docs"),
+  },
+  {
     href: "/settings",
     label: "settings",
-    // The settings hub nests profile, appearance, api keys, activity, billing
-    // (/account) and docs — mark it active across all of them.
-    match: (p) =>
-      p.startsWith("/settings") || p.startsWith("/account") || p.startsWith("/docs"),
+    // The settings hub nests profile, appearance, api keys, activity and
+    // billing (/account) — mark it active across all of them. Docs is its own
+    // top-level destination, not a settings tab.
+    match: (p) => p.startsWith("/settings") || p.startsWith("/account"),
   },
 ];
 

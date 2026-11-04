@@ -89,7 +89,7 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
+		Addr:              cfg.BindAddr + ":" + cfg.Port,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: SSE streams are long-lived.

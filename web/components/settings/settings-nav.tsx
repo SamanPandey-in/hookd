@@ -6,8 +6,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 // The settings section sub-nav. Items point at the sibling /settings/* routes
-// plus billing (/account) and docs (/docs) — those are owned by other surfaces,
-// so this LINKS to them, never renders them. Active treatment matches the app's
+// plus billing (/account) — owned by another surface, so this LINKS to it,
+// never renders it. Docs is a top-level destination, not a settings tab, so it
+// is NOT listed here (see the command bar). Active treatment matches the app's
 // command-bar: a lime left-rule + full-strength ink (DESIGN §5.1 / §8 — the
 // lime accent is spent sparingly, here only to mark the current section).
 
@@ -40,7 +41,6 @@ export const SETTINGS_NAV: SettingsNavItem[] = [
     match: (p) => p.startsWith("/settings/activity"),
   },
   { href: "/settings/billing", label: "billing", match: (p) => p.startsWith("/settings/billing") || p.startsWith("/account") },
-  { href: "/docs", label: "docs", match: (p) => p.startsWith("/docs") },
 ];
 
 /** Desktop: a vertical rail. Each item is a Link with a 2px active left-rule. */

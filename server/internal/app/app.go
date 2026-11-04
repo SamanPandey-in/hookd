@@ -83,7 +83,8 @@ func New(d Deps) http.Handler {
 	r.Route("/auth", func(r chi.Router) {
 		r.Get("/github/login", authH.Login)
 		r.Get("/github/callback", authH.Callback)
-		r.Post("/logout", authH.Logout)
+		// Logout is cookie-authed and state-changing → same CSRF guard as /api.
+		r.With(httpx.EnforceOrigin(cfg.AllowedOrigin)).Post("/logout", authH.Logout)
 	})
 
 	// Public read-only share link.
@@ -95,6 +96,9 @@ func New(d Deps) http.Handler {
 	// Authed JSON API. Auth is applied per-route (Mount declares its own): most
 	// routes are session-only, the four programmatic routes also accept API keys.
 	r.Route("/api", func(r chi.Router) {
+		// CSRF defense: cookie auth rides cross-site (SameSite=None), so reject
+		// unsafe-method requests from a foreign Origin before any auth/work.
+		r.Use(httpx.EnforceOrigin(cfg.AllowedOrigin))
 		r.With(authH.RequireAuth).Get("/me", authH.Me)
 		r.Route("/billing", func(r chi.Router) {
 			r.Use(authH.RequireAuth)

@@ -16,6 +16,7 @@ import (
 // Config is the fully-resolved server configuration.
 type Config struct {
 	Port          string
+	BindAddr      string // interface to bind; "" = all. Set 127.0.0.1 behind a proxy.
 	DatabaseURL   string
 	AllowedOrigin string
 
@@ -81,6 +82,7 @@ func Load() (*Config, error) {
 
 	c := &Config{
 		Port:               envOr("PORT", "8080"),
+		BindAddr:           strings.TrimSpace(os.Getenv("BIND_ADDR")),
 		DatabaseURL:        os.Getenv("DATABASE_URL"),
 		AllowedOrigin:      envOr("ALLOWED_ORIGIN", "http://localhost:3000"),
 		GitHubClientID:     os.Getenv("GITHUB_CLIENT_ID"),
