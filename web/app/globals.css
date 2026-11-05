@@ -144,6 +144,44 @@
   --ring: var(--accent);
 }
 
+/* Singularity — a warm-graphite, monochrome dark theme (modelled on a
+   terminal-grade control panel). Unlike the brand lime, there is NO vivid
+   accent hue: the "accent" is a warm cream, so primary actions read as a light
+   chip on near-black. Status colour lives only in pass/fail/warn (green/red/
+   amber), used as small dots and pills — never as decoration. */
+:root[data-theme="singularity"] {
+  --bg: #131210; /* warm near-black, hue ~24 at very low saturation */
+  --surface: #191715;
+  --surface-hi: #2b2826;
+  --border: #312d2b;
+  --text: #f4f4f1; /* warm paper-white */
+  --muted: #b2ada9;
+  --accent: #f4f4f1; /* monochrome: cream, not a brand hue */
+  --accent-fill: #f4f4f1; /* primary action = light chip on dark, dark ink */
+  --on-accent: #191615;
+  --pass: #47c289; /* success green — dots / verified / 2xx */
+  --fail: #dd4040;
+  --warn: #f4ae34;
+  --ring: var(--accent);
+}
+
+/* Singularity Light — the same monochrome system inverted onto warm paper. */
+:root[data-theme="singularity-light"] {
+  --bg: #fbfbf9; /* warm paper white */
+  --surface: #ffffff;
+  --surface-hi: #f1f1ee;
+  --border: #e5e4e1;
+  --text: #161412; /* near-black warm ink */
+  --muted: #66605c;
+  --accent: #191615; /* monochrome: near-black ink is the primary */
+  --accent-fill: #191615; /* primary action = dark chip, light ink */
+  --on-accent: #fbfbf9;
+  --pass: #1f7a50; /* darkened for AA on paper */
+  --fail: #c11f1f;
+  --warn: #9b5608;
+  --ring: var(--accent);
+}
+
 /* Map tokens into the Tailwind v4 theme so utilities resolve to them:
    bg-bg, bg-surface, bg-surface-hi, border-border, text-text, text-muted,
    text-accent, bg-accent-fill, text-on-accent, text-pass/fail/warn,
