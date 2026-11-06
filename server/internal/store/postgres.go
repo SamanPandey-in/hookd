@@ -420,6 +420,25 @@ func (p *Postgres) DeleteOldEvents(ctx context.Context, endpointID string, older
 	return ct.RowsAffected(), nil
 }
 
+func (p *Postgres) ListRetentionTargets(ctx context.Context) ([]RetentionTarget, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT e.id, e.retention_days, COALESCE(u.plan, 'free'), COALESCE(u.sub_current_period_end_ms, 0)
+		   FROM endpoints e JOIN users u ON u.id = e.owner_id`)
+	if err != nil {
+		return nil, fmt.Errorf("store: list retention targets: %w", err)
+	}
+	defer rows.Close()
+	var out []RetentionTarget
+	for rows.Next() {
+		var t RetentionTarget
+		if err := rows.Scan(&t.EndpointID, &t.RetentionDays, &t.OwnerPlan, &t.OwnerPeriodEndMS); err != nil {
+			return nil, fmt.Errorf("store: scan retention target: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 func (p *Postgres) CreateShare(ctx context.Context, eventID string) (string, error) {
 	token := NewToken(16)
 	ct, err := p.pool.Exec(ctx,

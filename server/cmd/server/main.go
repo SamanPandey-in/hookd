@@ -19,6 +19,7 @@ import (
 	"whook/internal/cryptox"
 	"whook/internal/dodo"
 	"whook/internal/replay"
+	"whook/internal/retention"
 	"whook/internal/sse"
 	"whook/internal/store"
 	"whook/migrations"
@@ -96,6 +97,10 @@ func main() {
 		IdleTimeout: 120 * time.Second,
 	}
 
+	purgeCtx, stopPurge := context.WithCancel(ctx)
+	defer stopPurge()
+	go retention.New(st).Run(purgeCtx, cfg.PurgeInterval)
+
 	go func() {
 		log.Printf("whook: listening on %s", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -107,6 +112,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 	log.Printf("whook: shutting down")
+	stopPurge()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)

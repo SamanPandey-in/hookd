@@ -16,6 +16,11 @@ const (
 	ProMaxEndpoints   = 25
 	FreeRetentionDays = 7
 	ProRetentionDays  = 90
+
+	// DowngradeGraceDays is how long after a Pro subscription's paid-through date
+	// the owner keeps Pro-length event history before the free retention cap
+	// starts deleting it.
+	DowngradeGraceDays = 5
 )
 
 // IsPro reports whether a plan string grants Pro features.

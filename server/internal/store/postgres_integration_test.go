@@ -209,3 +209,65 @@ func TestPGProfileKeysActivityAndDeleteAccount(t *testing.T) {
 		t.Fatalf("endpoints not cascaded: %d", len(eps))
 	}
 }
+
+// TestPGRetentionTargetsAndPurge checks the join that feeds the retention
+// purger and that DeleteOldEvents removes only events past the cutoff.
+func TestPGRetentionTargetsAndPurge(t *testing.T) {
+	pg := newTestPG(t)
+	defer pg.Close()
+	ctx := context.Background()
+
+	u, err := pg.UpsertUserByGitHub(ctx, time.Now().UnixNano(), "retention", "r@x.com")
+	if err != nil {
+		t.Fatalf("upsert user: %v", err)
+	}
+	// Leave no trace in the shared DB: cascade-deletes the user, its endpoint and
+	// any surviving events when the test finishes.
+	t.Cleanup(func() { _ = pg.DeleteAccount(context.Background(), u.ID) })
+	periodEnd := time.Now().Add(10 * 24 * time.Hour).UnixMilli()
+	if err := pg.UpdateUserSubscription(ctx, u.ID, "pro", Subscription{CurrentPeriodEnd: periodEnd}); err != nil {
+		t.Fatalf("set plan: %v", err)
+	}
+	ep := &Endpoint{OwnerID: u.ID, Name: "retention", RetentionDays: 30}
+	if err := pg.CreateEndpoint(ctx, ep); err != nil {
+		t.Fatalf("create endpoint: %v", err)
+	}
+
+	targets, err := pg.ListRetentionTargets(ctx)
+	if err != nil {
+		t.Fatalf("list targets: %v", err)
+	}
+	var found bool
+	for _, tg := range targets {
+		if tg.EndpointID == ep.ID {
+			found = true
+			if tg.RetentionDays != 30 || tg.OwnerPlan != "pro" || tg.OwnerPeriodEndMS != periodEnd {
+				t.Fatalf("target = %+v, want retention 30, plan pro, period end %d", tg, periodEnd)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("new endpoint missing from retention targets")
+	}
+
+	now := time.Now()
+	mk := func(age time.Duration) *Event {
+		ev := &Event{EndpointID: ep.ID, Method: "POST", RawBody: []byte("{}"), ReceivedAtMS: now.Add(-age).UnixMilli()}
+		if err := pg.CreateEvent(ctx, ev); err != nil {
+			t.Fatalf("create event: %v", err)
+		}
+		return ev
+	}
+	fresh, stale := mk(24*time.Hour), mk(40*24*time.Hour)
+
+	n, err := pg.DeleteOldEvents(ctx, ep.ID, now.Add(-30*24*time.Hour))
+	if err != nil || n != 1 {
+		t.Fatalf("DeleteOldEvents = (%d, %v), want (1, nil)", n, err)
+	}
+	if _, err := pg.GetEvent(ctx, fresh.ID); err != nil {
+		t.Fatalf("fresh event should remain: %v", err)
+	}
+	if _, err := pg.GetEvent(ctx, stale.ID); err != ErrNotFound {
+		t.Fatalf("stale event should be gone, got err=%v", err)
+	}
+}

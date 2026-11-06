@@ -334,6 +334,24 @@ func (f *Fake) DeleteOldEvents(_ context.Context, endpointID string, olderThan t
 	return n, nil
 }
 
+func (f *Fake) ListRetentionTargets(_ context.Context) ([]RetentionTarget, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]RetentionTarget, 0, len(f.endpoints))
+	for _, e := range f.endpoints {
+		p := "free"
+		var periodEnd int64
+		if u, ok := f.users[e.OwnerID]; ok {
+			if u.Plan != "" {
+				p = u.Plan
+			}
+			periodEnd = u.Subscription.CurrentPeriodEnd
+		}
+		out = append(out, RetentionTarget{EndpointID: e.ID, RetentionDays: e.RetentionDays, OwnerPlan: p, OwnerPeriodEndMS: periodEnd})
+	}
+	return out, nil
+}
+
 func (f *Fake) CreateShare(_ context.Context, eventID string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

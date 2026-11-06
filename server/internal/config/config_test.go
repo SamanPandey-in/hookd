@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/base64"
 	"testing"
+	"time"
 )
 
 func TestLoadDevDefaults(t *testing.T) {
@@ -68,5 +69,33 @@ func TestShortSessionKeyRejected(t *testing.T) {
 	t.Setenv("SESSION_KEY", "short")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected error for short session key")
+	}
+}
+
+func TestLoadPurgeInterval(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("SECRET_ENC_KEY", "")
+	t.Setenv("SESSION_KEY", "")
+
+	cases := []struct {
+		env  string
+		want time.Duration
+	}{
+		{"", time.Hour},          // default: hourly
+		{"15", 15 * time.Minute}, // custom
+		{"0", 0},                 // disabled
+		{"-5", 0},                // negative treated as disabled
+	}
+	for _, c := range cases {
+		t.Run("PURGE_INTERVAL_MINUTES="+c.env, func(t *testing.T) {
+			t.Setenv("PURGE_INTERVAL_MINUTES", c.env)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.PurgeInterval != c.want {
+				t.Fatalf("PurgeInterval = %v, want %v", cfg.PurgeInterval, c.want)
+			}
+		})
 	}
 }

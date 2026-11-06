@@ -206,6 +206,16 @@ Audited and in place:
 
 Operational follow-ups (not blockers for a first ship):
 
+- **Retention purge:** a background job inside the API process deletes events past
+  each endpoint's `retention_days` (capped by the owner's plan: free 7, Pro 90).
+  A user who drops from Pro to free keeps the Pro cap for 5 days
+  (`plan.DowngradeGraceDays`) after their last known subscription period end, then
+  the free cap applies. Users who never subscribed get no grace. It
+  runs once at boot and then every `PURGE_INTERVAL_MINUTES` (default 60; `0`
+  disables it). It logs only deleted-row counts. The first run after deploying
+  this change removes all history older than each plan's cap, so expect a one-off
+  bulk delete on a database that has been collecting events without it.
+
 - **Replay abuse:** replay makes authenticated outbound requests to public URLs.
   The SSRF guard blocks internal targets, but a logged-in abuser could still fan
   out to third-party public hosts. Watch the activity log; a per-user replay

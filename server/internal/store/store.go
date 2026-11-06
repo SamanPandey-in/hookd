@@ -105,6 +105,17 @@ type Event struct {
 	VerifyDetails map[string]string `json:"verify_details"`
 }
 
+// RetentionTarget is what the retention purger needs to know about one endpoint:
+// the retention the owner configured and the owner's current plan (which caps it).
+type RetentionTarget struct {
+	EndpointID    string
+	RetentionDays int
+	OwnerPlan     string
+	// OwnerPeriodEndMS is the owner's last known subscription period end (unix
+	// ms), 0 if they never subscribed. It anchors the downgrade grace period.
+	OwnerPeriodEndMS int64
+}
+
 // ReplayAttempt records one replay of an event to a target URL.
 type ReplayAttempt struct {
 	ID              int64             `json:"id"`
@@ -195,6 +206,9 @@ type Store interface {
 	GetEvent(ctx context.Context, id string) (*Event, error)
 	ListEvents(ctx context.Context, endpointID string, f EventFilter) ([]*Event, error)
 	DeleteOldEvents(ctx context.Context, endpointID string, olderThan time.Time) (int64, error)
+	// ListRetentionTargets returns every endpoint with its configured retention
+	// and its owner's plan, for the background purger.
+	ListRetentionTargets(ctx context.Context) ([]RetentionTarget, error)
 
 	// Share links (token -> single event, no auth).
 	CreateShare(ctx context.Context, eventID string) (string, error)

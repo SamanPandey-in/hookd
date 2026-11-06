@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { LogoMark } from "@/components/ui/logo-mark";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 // Landing nav (DESIGN §5.2). Hairline-separated, 56px, surface over the page
 // base — no shadow. One primary action only (start free); `pricing` and the
@@ -31,7 +30,6 @@ export function MarketingNav() {
           >
             pricing
           </Link>
-          <ThemeToggle />
           <Link href="/login" className="rounded-sm focus-visible:outline-2">
             <Button variant="primary" size="sm">
               start free

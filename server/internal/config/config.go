@@ -52,6 +52,10 @@ type Config struct {
 	ReplayTimeout     time.Duration // per replay attempt timeout
 	MaxReplayRespBody int64         // cap on stored replay response body
 
+	// PurgeInterval is how often the retention purger deletes expired events.
+	// Zero disables the purger (events are then kept forever).
+	PurgeInterval time.Duration
+
 	// CookieSecure controls the Secure flag on session cookies; off for local
 	// http, on when served behind TLS.
 	CookieSecure bool
@@ -122,6 +126,15 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	c.ReplayTimeout = time.Duration(secs) * time.Second
+
+	purgeMins, err := envInt("PURGE_INTERVAL_MINUTES", 60)
+	if err != nil {
+		return nil, err
+	}
+	if purgeMins < 0 {
+		purgeMins = 0
+	}
+	c.PurgeInterval = time.Duration(purgeMins) * time.Minute
 
 	c.CookieSecure = envBool("COOKIE_SECURE", false)
 	c.CookieSameSite = parseSameSite(envOr("COOKIE_SAMESITE", "lax"))
