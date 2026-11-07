@@ -38,6 +38,9 @@ func New(d Deps) http.Handler {
 
 	endpointRL := httpx.NewRateLimiter(cfg.IngestRatePerMin, cfg.IngestBurst)
 	ipRL := httpx.NewRateLimiter(cfg.IPRatePerMin, cfg.IPBurst)
+	// Dedicated per-IP bucket for the public (unauth) signature debugger, kept
+	// separate from the ingest limiters so debugger traffic can't starve ingest.
+	debugRL := httpx.NewRateLimiter(cfg.IPRatePerMin, cfg.IPBurst)
 
 	ingestH := ingest.New(d.Store, d.Hub, d.Cipher, cfg.MaxBodyBytes, endpointRL, ipRL)
 
@@ -89,6 +92,12 @@ func New(d Deps) http.Handler {
 
 	// Public read-only share link.
 	r.Get("/share/{token}", apiH.Share)
+
+	// Public, no-auth signature debugger (free top-of-funnel). Rate-limited per
+	// IP, stores nothing, does no outbound I/O. CORS for the allowed origin is
+	// already applied by the router-wide middleware above.
+	publicVerifyH := &api.PublicVerify{RL: debugRL}
+	r.Post("/debug/verify", publicVerifyH.Verify)
 
 	// Public Dodo Payments webhook (verified via our own Standard-Webhooks engine).
 	r.Post("/webhooks/dodo", billingH.Webhook)

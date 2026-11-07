@@ -40,6 +40,21 @@ type Request struct {
 	Provider  verify.Provider // used when Resign is true
 	Secret    string          // decrypted signing secret; required when Resign is true
 	Now       time.Time       // injected timestamp for re-sign (zero => now)
+
+	// Body, when non-nil, is an edited raw body to SEND (and, when re-signing, to
+	// sign) instead of the captured Event.RawBody. The stored event is never
+	// mutated — the edit applies only to this outgoing replay. A non-nil, empty
+	// slice means "replay an empty body"; nil means "use the captured body".
+	Body []byte
+}
+
+// outgoingBody returns the bytes to send for this replay: the edited Body when
+// one was supplied, otherwise the captured event's raw body.
+func (r Request) outgoingBody() []byte {
+	if r.Body != nil {
+		return r.Body
+	}
+	return r.Event.RawBody
 }
 
 // Engine performs replays.
@@ -86,7 +101,7 @@ func (e *Engine) Replay(ctx context.Context, req Request) (*store.ReplayAttempt,
 	ctx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(ctx, req.Event.Method, u.String(), bytes.NewReader(req.Event.RawBody))
+	httpReq, err := http.NewRequestWithContext(ctx, req.Event.Method, u.String(), bytes.NewReader(req.outgoingBody()))
 	if err != nil {
 		attempt.Error = err.Error()
 		return attempt, err
@@ -132,7 +147,7 @@ func (e *Engine) buildHeaders(req Request) (http.Header, error) {
 		res := verify.Sign(verify.SignInput{
 			Provider: req.Provider,
 			Secret:   req.Secret,
-			Body:     req.Event.RawBody,
+			Body:     req.outgoingBody(),
 			Now:      req.Now,
 		})
 		if res.Err != nil {

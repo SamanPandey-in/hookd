@@ -58,6 +58,16 @@ export default function HomePage() {
               <ShareOnX />
             </div>
             <p className="font-mono text-[11px] text-muted">
+              or{" "}
+              <Link
+                href="/debugger"
+                className="text-text underline decoration-border underline-offset-2 hover:decoration-text"
+              >
+                debug a signature right now
+              </Link>{" "}
+              — no signup, nothing stored
+            </p>
+            <p className="font-mono text-[11px] text-muted">
               private, unguessable urls · bodies encrypted, never logged
             </p>
           </div>

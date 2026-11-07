@@ -25,6 +25,12 @@ export function MarketingNav() {
             live demo
           </Link>
           <Link
+            href="/debugger"
+            className="rounded-sm px-2 py-1.5 font-sans text-sm text-muted transition-colors duration-[80ms] hover:text-text focus-visible:outline-2"
+          >
+            signature debugger
+          </Link>
+          <Link
             href="/pricing"
             className="rounded-sm px-2 py-1.5 font-sans text-sm text-muted transition-colors duration-[80ms] hover:text-text focus-visible:outline-2"
           >

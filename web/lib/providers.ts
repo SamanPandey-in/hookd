@@ -53,3 +53,96 @@ export const CAUSE_HINT: Record<Exclude<VerifyCause, "">, string> = {
     "body appears re-serialized — verify against the raw bytes",
   unsupported_provider: "no verifier for this provider",
 };
+
+// F1 — Fix-it guidance (IMPR_PLAN §6.F1). CAUSE_HINT says *what* failed; this
+// says *how to fix it*, specialized by the backend's `details` map
+// (skew_seconds, tolerance_seconds, encoding, computed_other_encoding,
+// received_body_len, reencoded_body_len) and the provider. Rendered as ONE
+// quiet "Likely fix →" line under the WHY, only on FAIL/UNVERIFIED and only when
+// the WHY is unlocked. Each entry returns a non-empty, actionable string.
+
+type Details = Record<string, string> | null | undefined;
+
+/** The canonical signature encoding each provider expects, for the
+ *  encoding_mismatch fix (Shopify=base64, the rest=hex). */
+const PROVIDER_ENCODING: Partial<Record<Provider, "hex" | "base64">> = {
+  stripe: "hex",
+  github: "hex",
+  razorpay: "hex",
+  shopify: "base64",
+  slack: "hex",
+  standard_webhooks: "base64",
+};
+
+const d = (det: Details, k: string): string | undefined => {
+  const v = det?.[k];
+  return v && v.length > 0 ? v : undefined;
+};
+
+/** Who to name in a fix line — the provider label, or a neutral fallback. */
+function fixWho(provider?: Provider | ""): string {
+  return provider ? providerLabel(provider) : "this provider";
+}
+
+export const CAUSE_FIX: Record<
+  Exclude<VerifyCause, "" | "ok">,
+  (details?: Details, provider?: Provider | "") => string
+> = {
+  no_signature_header: (_det, provider) =>
+    `no signature header on the request — confirm the sender is ${fixWho(
+      provider,
+    )} and that your proxy or framework isn't stripping the signature header before hookd sees it.`,
+
+  malformed_signature_header: (_det, provider) =>
+    `the signature header is present but malformed — check you're forwarding the ${fixWho(
+      provider,
+    )} signature header verbatim (no truncation, re-casing or re-joining of its parts).`,
+
+  missing_secret: () =>
+    "no signing secret set for this endpoint — add it in Settings so hookd can verify.",
+
+  signature_mismatch: () =>
+    "computed ≠ provided with the current secret — the secret is wrong or rotated, or you're signing a different body than what was actually sent.",
+
+  timestamp_out_of_tolerance: (det, provider) => {
+    const skew = d(det, "skew_seconds");
+    const tol = d(det, "tolerance_seconds") ?? "300";
+    const age = skew ? `${skew}s old` : "outside the tolerance window";
+    return `event is ${age}; ${fixWho(
+      provider,
+    )} tolerates ${tol}s — you're verifying a stale or replayed event, or this machine's clock is off. Re-send the event, or widen the tolerance only if you understand the replay risk.`;
+  },
+
+  encoding_mismatch: (det, provider) => {
+    // `encoding` is the canonical encoding the provider expects (backend always
+    // sets it for this cause); fall back to the per-provider default.
+    const expected = d(det, "encoding") ?? PROVIDER_ENCODING[provider as Provider];
+    const wrong = expected === "base64" ? "hex" : "base64";
+    const expectedTxt = expected ?? "its canonical encoding";
+    return `the digest is correct but encoded as ${wrong}; ${fixWho(
+      provider,
+    )} expects ${expectedTxt}. Decode/encode accordingly (Shopify=base64, Stripe/GitHub/Razorpay=hex).`;
+  },
+
+  body_possibly_altered: (det) => {
+    const from = d(det, "received_body_len");
+    const to = d(det, "reencoded_body_len");
+    const delta = from && to ? ` (${from}→${to} bytes)` : "";
+    return `a middleware re-serialized the JSON before your verifier saw it${delta}. Verify the raw request body, before any body parser touches it.`;
+  },
+
+  unsupported_provider: () =>
+    "no verifier for this provider — pick a supported provider in Settings, or verify this signature scheme yourself.",
+};
+
+/** Resolve the "Likely fix →" line for a failed/unverified result. Returns ""
+ *  for ok / unknown causes so the caller can omit the line entirely. */
+export function fixForCause(
+  cause: VerifyCause | undefined,
+  details?: Details,
+  provider?: Provider | "",
+): string {
+  if (!cause || cause === "ok") return "";
+  const fn = CAUSE_FIX[cause as Exclude<VerifyCause, "" | "ok">];
+  return fn ? fn(details, provider) : "";
+}

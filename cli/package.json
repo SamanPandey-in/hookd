@@ -1,0 +1,32 @@
+{
+  "name": "hookd",
+  "version": "0.1.0",
+  "description": "Forward captured webhooks from hookd to a local URL — optionally re-signed so your handler's signature verification still passes.",
+  "type": "module",
+  "bin": {
+    "hookd": "./bin/hookd.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md"
+  ],
+  "keywords": [
+    "webhook",
+    "webhooks",
+    "stripe",
+    "cli",
+    "forward",
+    "localhost",
+    "tunnel",
+    "sse",
+    "hookd"
+  ],
+  "license": "MIT"
+}

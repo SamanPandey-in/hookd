@@ -31,9 +31,11 @@ Primary ICP: **indie/full‑stack developers and small backend teams integrating
 5. **Black box: sent vs received vs processed** — silent failures, logs on both ends inconclusive (Medium).
 6. **Can't set the response the endpoint returns** — needed to exercise provider retry logic (Low/Medium).
 
-## 4. v1 scope — **fully hosted** (no CLI in v1)
+## 4. v1 scope — hosted, **plus a localhost CLI and a free public debugger**
 
-v1 receives every webhook **on our server** and shows it to the user. Replay/forward is **server‑side to a target URL** (SSRF‑guarded). The localhost‑forwarding CLI is **deferred** (see Non‑goals). Features, ranked:
+> **Update 2026‑11‑07 (pre‑launch):** three moat‑deepening additions shipped and were verified end‑to‑end — **edit‑then‑replay** (F3), a free no‑signup **public signature debugger** (F6), and the **`npx hookd listen` localhost forwarder** (F7). The "no CLI in v1" line below is superseded: the CLI is in. See `IMPR_PLAN.md` for the build/verify record.
+
+v1 receives every webhook **on our server** and shows it to the user. Server‑side replay/forward to a target URL stays SSRF‑guarded; the new CLI forwards to localhost from the user's own machine (so it is not bound by that guard). Features, ranked:
 
 ### F1 — Capture + inspect (table stakes, must be excellent)
 - Each user gets **stable, reusable, unguessable ingest URLs** (`/i/{id}`, ≥128‑bit id) that **do not expire** and are **always‑on** (we never sleep and drop a webhook — see `PLAN.md` hosting constraint).
@@ -46,10 +48,12 @@ v1 receives every webhook **on our server** and shows it to the user. Replay/for
 - Verify for **v1 providers: Stripe, GitHub, Razorpay, Shopify, Standard Webhooks (Svix/Dodo), Slack.** Each: correct scheme, encoding, signed‑content construction, and timestamp tolerance.
 - On **PASS**: show scheme + algorithm + which secret matched + timestamp status (one line, in lime).
 - On **FAIL**: show the **specific cause**, not just "failed" — e.g. `computed v1 ≠ header v1`, `timestamp skew 612s > 300s tolerance`, `no signature header`, `looks base64 but secret produced hex`, `body appears re‑serialized (whitespace differs) — verify against raw bytes`.
+- **Likely‑fix line (shipped 2026‑11‑07):** below the cause, one actionable, provider‑aware remediation specialized by the failure details (e.g. "event is 340s old; Stripe tolerates 300s → stale/replayed, or your clock is off"; "verify the **raw** body, before any JSON parser"; "Shopify is base64, Stripe/GitHub/Razorpay are hex"). Turns the diagnosis into a fix. Rendered unlocked on the public debugger and in the inspector; gated for free accounts in the app.
 - **Acceptance:** against a table of real known‑good payloads per provider → PASS with correct reason; against tampered/stale/wrong‑secret payloads → FAIL naming the *actual* cause. Constant‑time comparison. 0 false "verified".
 
-### F3 — Replay / re‑sign to a target URL
-- Re‑send any captured request to a **user‑supplied target URL** (their deployed endpoint, or a staging URL). Edit before send (headers/body) optional.
+### F3 — Replay / re‑sign to a target URL **+ edit‑then‑replay (shipped)**
+- Re‑send any captured request to a **user‑supplied target URL** (their deployed endpoint, or a staging URL).
+- **Edit‑then‑replay (built):** tweak the payload body before sending; re‑sign is then required so the signature matches the edited bytes, and the stored original is never mutated. Lets a dev craft an edge‑case event (e.g. a different `amount`) they can't easily trigger upstream. Oversize (>1 MiB) and edit‑without‑resign are rejected (400).
 - **Re‑sign toggle:** (a) re‑sign with a fresh timestamp + the endpoint's secret so replay protection doesn't trip, or (b) keep the original signature verbatim.
 - Show the **delivery result**: response status, headers, body, latency; store each attempt.
 - **SSRF guard:** block private/loopback/link‑local/metadata ranges, scheme allowlist, timeout, no redirect to private space (see `AGENTS.md` §6).
@@ -65,9 +69,19 @@ v1 receives every webhook **on our server** and shows it to the user. Replay/for
 - **Send a sample payload** (per provider templates) to an endpoint to build against before the real integration exists.
 - **Acceptance:** set endpoint to return 500 → provider/replayer sees 500; send a sample `checkout.session.completed` → it appears captured.
 
+### F6 — Free public signature debugger (shipped; the reach / top‑of‑funnel play)
+- A no‑signup page (`/debugger`) + public endpoint (`POST /debug/verify`): paste a signing secret + the raw request → the **same pass/fail + precise reason + likely‑fix** the paid product gives. Auto‑detects the provider from headers.
+- **Stores nothing, logs no secret/body, rate‑limited per IP, zero outbound I/O.** Reuses the exact verify engine (so the free tool demonstrates the paid value) and funnels to signup.
+- **Why:** "stripe signature verification failed" is a high‑intent search; this is an X‑shareable, SEO‑friendly on‑ramp that costs almost nothing (the engine already existed).
+
+### F7 — `npx hookd listen` localhost forwarder (shipped; closes the #1 competitive gap)
+- Zero‑dependency CLI: subscribes (via API key) to an endpoint's SSE stream and POSTs each captured event to a **local url**, preserving method + body. Optional `--resign` re‑signs locally with a fresh timestamp so the local handler's verification passes.
+- Closes the one gap ngrok/Hookdeck own (getting the event to the developer's localhost) — the headline demo: *real provider event → your localhost handler → green verify.*
+- **Acceptance (verified live):** `npx hookd listen <id> --forward http://localhost:PORT` → a webhook POSTed to the ingest url arrives at the local server with the exact body.
+
 ## 5. Non‑goals (v1) — protect the date, avoid traps
 
-- **No localhost‑forwarding CLI in v1.** Deferred; build only if the product gets traction ("fast‑follow"). v1 replays to a *target URL*, server‑side.
+- ~~**No localhost‑forwarding CLI in v1.**~~ **Superseded (2026‑11‑07):** shipped as F7 (`npx hookd listen`). The product reached the point where closing the localhost gap was the single highest‑leverage addition, so it moved from fast‑follow into launch.
 - **No at‑scale production delivery / queuing / fan‑out** (Hookdeck/Svix/Convoy turf, millions of events). Out of ICP; a pricing + engineering trap.
 - **No outbound webhook *sending* infrastructure** (we're an inbound debugger, not a sender).
 - **No multi‑seat team management** beyond simple share links in v1 (team tier can come later).

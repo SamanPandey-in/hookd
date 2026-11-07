@@ -61,12 +61,12 @@ func (a *API) Mount(r chi.Router) {
 			r.With(sess).Put("/response", a.SetResponseRule)
 			r.With(sess).Post("/sample", a.SendSample)
 			r.With(key).Get("/events", a.ListEvents) // programmatic
-			r.With(sess).Get("/stream", a.Stream)
+			r.With(key).Get("/stream", a.Stream)     // programmatic (CLI forwarder)
 		})
 	})
 	r.Route("/events/{id}", func(r chi.Router) {
-		r.With(key).Get("/", a.GetEvent) // programmatic
-		r.With(sess).Get("/body", a.GetEventBody)
+		r.With(key).Get("/", a.GetEvent)         // programmatic
+		r.With(key).Get("/body", a.GetEventBody) // programmatic (CLI fetches bodies)
 		r.With(sess).Post("/replay", a.ReplayEvent)
 		r.With(sess).Get("/replays", a.ListReplays)
 		r.With(sess).Post("/share", a.CreateShare)

@@ -73,9 +73,19 @@ func (a *API) GetEventBody(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(ev.RawBody)
 }
 
+// maxEditedReplayBody caps the size of an edited replay body. It is independent
+// of the captured-event size limit; a replay that edits the payload may only
+// grow it so far before we refuse (keeps the re-sign + send path bounded).
+const maxEditedReplayBody = 1 << 20 // 1 MiB
+
 type replayReq struct {
 	TargetURL string `json:"target_url"`
 	Resign    bool   `json:"resign"`
+	// Body, when present, is an edited raw body to send instead of the captured
+	// one. Editing invalidates the original signature, so it is only accepted
+	// together with resign=true (the edited bytes are then re-signed). A pointer
+	// so an explicit empty string ("") is distinguishable from an absent field.
+	Body *string `json:"body"`
 }
 
 // ReplayEvent re-sends a captured event to a user-supplied target URL, optionally
@@ -90,12 +100,44 @@ func (a *API) ReplayEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req replayReq
-	if err := httpx.DecodeJSON(w, r, a.MaxJSONBody, &req); err != nil || req.TargetURL == "" {
+	// Allow a decode budget large enough for a full edited body plus the small
+	// JSON envelope, so an oversize body hits the explicit size check below with a
+	// clear message rather than a generic decode error.
+	decodeCap := int64(maxEditedReplayBody) + (64 << 10)
+	if decodeCap < a.MaxJSONBody {
+		decodeCap = a.MaxJSONBody
+	}
+	if err := httpx.DecodeJSON(w, r, decodeCap, &req); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid replay request body")
+		return
+	}
+	if req.TargetURL == "" {
 		httpx.Error(w, http.StatusBadRequest, "target_url is required")
 		return
 	}
 
-	rreq := replay.Request{Event: ev, TargetURL: req.TargetURL, Resign: req.Resign}
+	// Optional edited body: it replaces the captured bytes for THIS replay only
+	// (the stored event is never mutated). Editing breaks the original signature,
+	// so it is only valid with re-sign on.
+	var editedBody []byte
+	if req.Body != nil {
+		if len(*req.Body) > maxEditedReplayBody {
+			httpx.Error(w, http.StatusBadRequest, "edited body exceeds the 1 MiB limit")
+			return
+		}
+		if !req.Resign {
+			httpx.Error(w, http.StatusBadRequest,
+				"editing the body invalidates the original signature — enable re-sign")
+			return
+		}
+		b := []byte(*req.Body)
+		if b == nil {
+			b = []byte{} // force non-nil so replay treats "" as an edit, not absent
+		}
+		editedBody = b
+	}
+
+	rreq := replay.Request{Event: ev, TargetURL: req.TargetURL, Resign: req.Resign, Body: editedBody}
 	if req.Resign {
 		provider := verify.Provider(ep.Provider)
 		if provider == "" {

@@ -11,12 +11,27 @@ import { StatusCode } from "@/components/ui/status";
 
 // Replay UI (DESIGN §5.1): a target-URL input + a re-sign toggle (fresh
 // timestamp vs keep the original signature) -> POST /api/events/{id}/replay.
-// The delivery result shows inline; a blocked/transport error surfaces in coral
-// stating the actual mechanism (the SSRF guard's message). Every attempt is
-// recorded, so the parent refreshes the Attempts timeline after each send.
+// F2 adds an optional, collapsible JSON payload editor: toggle "edit payload",
+// the captured body is pretty-printed into a textarea, and once you change it we
+// force re-sign ON (an edited body can't match the original signature) and send
+// the edited bytes to be signed fresh. The delivery result shows inline; a
+// blocked/transport error surfaces in coral stating the actual mechanism (the
+// SSRF guard's message). Every attempt is recorded, so the parent refreshes the
+// Attempts timeline after each send.
 
 export interface ReplayPanelHandle {
   focus: () => void;
+}
+
+/** Pretty-print a captured body as JSON when possible; otherwise return it
+ *  verbatim (so non-JSON payloads are still editable as raw text). */
+function prettyBody(raw: string): string {
+  if (!raw) return "";
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
 }
 
 export const ReplayPanel = React.forwardRef<
@@ -41,16 +56,56 @@ export const ReplayPanel = React.forwardRef<
   const [upgrade, setUpgrade] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
+  // --- F2: payload editor state --------------------------------------------
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [editedBody, setEditedBody] = React.useState("");
+  // The pristine pretty-printed capture; `edited` is true once they diverge.
+  const [pristineBody, setPristineBody] = React.useState<string | null>(null);
+  const [bodyLoading, setBodyLoading] = React.useState(false);
+  const [bodyErr, setBodyErr] = React.useState<string | null>(null);
+  const edited = editOpen && pristineBody !== null && editedBody !== pristineBody;
+
   React.useImperativeHandle(ref, () => ({
     focus: () => inputRef.current?.focus(),
   }));
 
-  // Reset transient output when the selected event changes.
+  // Reset transient output + editor state when the selected event changes.
   React.useEffect(() => {
     setResult(null);
     setError(null);
     setUpgrade(false);
+    setEditOpen(false);
+    setEditedBody("");
+    setPristineBody(null);
+    setBodyErr(null);
   }, [eventId]);
+
+  // An edited body can never match the original signature, so re-sign is forced
+  // on (and the backend rejects an edited body with resign:false). We don't
+  // silently flip it back when they revert — leaving it on is harmless.
+  React.useEffect(() => {
+    if (edited) setResign(true);
+  }, [edited]);
+
+  // Lazily fetch the captured body the first time the editor is opened — keeps
+  // this panel self-contained (the parent doesn't thread the body through).
+  const openEditor = async () => {
+    if (locked) return;
+    setEditOpen(true);
+    if (pristineBody !== null || bodyLoading) return;
+    setBodyLoading(true);
+    setBodyErr(null);
+    try {
+      const detail = await eventsApi.get(eventId);
+      const pretty = prettyBody(detail.body ?? "");
+      setPristineBody(pretty);
+      setEditedBody(pretty);
+    } catch (e) {
+      setBodyErr(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally {
+      setBodyLoading(false);
+    }
+  };
 
   const canResign = !!endpoint && endpoint.has_secret && !!endpoint.provider;
 
@@ -62,7 +117,12 @@ export const ReplayPanel = React.forwardRef<
     setError(null);
     setUpgrade(false);
     try {
-      const res = await eventsApi.replay(eventId, targetURL.trim(), resign);
+      const res = await eventsApi.replay(
+        eventId,
+        targetURL.trim(),
+        resign,
+        edited ? editedBody : undefined,
+      );
       setResult(res);
       if (!res.delivered) {
         setError(
@@ -121,30 +181,72 @@ export const ReplayPanel = React.forwardRef<
       {locked ? (
         <UpgradePrompt message="replay + re-sign to any target url is a pro feature." />
       ) : (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-text">
-            <input
-              type="checkbox"
-              checked={resign}
-              onChange={(e) => setResign(e.target.checked)}
-              className="h-4 w-4 cursor-pointer accent-[var(--accent-fill)]"
-            />
-            <span className="font-sans">re-sign with a fresh timestamp</span>
-          </label>
-          <span className="font-mono text-[11px] text-muted">
-            {resign
-              ? "signs the body with this endpoint's secret at the current time"
-              : "forwards the original captured signature headers unchanged"}
-          </span>
-          {resign && !canResign && (
-            <span
-              className="font-mono text-[11px]"
-              style={{ color: "var(--warn)" }}
-            >
-              needs a provider + signing secret — set them in settings
+        <>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-text">
+              <input
+                type="checkbox"
+                checked={resign}
+                disabled={edited}
+                onChange={(e) => setResign(e.target.checked)}
+                className="h-4 w-4 cursor-pointer accent-[var(--accent-fill)] disabled:cursor-not-allowed"
+              />
+              <span className="font-sans">re-sign with a fresh timestamp</span>
+            </label>
+            <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-text">
+              <input
+                type="checkbox"
+                checked={editOpen}
+                onChange={(e) =>
+                  e.target.checked ? openEditor() : setEditOpen(false)
+                }
+                className="h-4 w-4 cursor-pointer accent-[var(--accent-fill)]"
+              />
+              <span className="font-sans">edit payload</span>
+            </label>
+            <span className="font-mono text-[11px] text-muted">
+              {resign
+                ? "signs the body with this endpoint's secret at the current time"
+                : "forwards the original captured signature headers unchanged"}
             </span>
+            {resign && !canResign && (
+              <span
+                className="font-mono text-[11px]"
+                style={{ color: "var(--warn)" }}
+              >
+                needs a provider + signing secret — set them in settings
+              </span>
+            )}
+          </div>
+
+          {editOpen && (
+            <div className="flex flex-col gap-1.5">
+              <FieldLabel>Edited payload</FieldLabel>
+              {bodyLoading ? (
+                <p className="font-mono text-[11px] text-muted">
+                  loading captured body…
+                </p>
+              ) : bodyErr ? (
+                <ErrorBanner message={bodyErr} />
+              ) : (
+                <textarea
+                  value={editedBody}
+                  onChange={(e) => setEditedBody(e.target.value)}
+                  spellCheck={false}
+                  rows={10}
+                  className="min-h-40 w-full resize-y rounded-sm border border-border bg-surface-hi p-3 font-mono text-xs leading-relaxed text-text focus-visible:outline-2"
+                />
+              )}
+              {edited && (
+                <span className="font-mono text-[11px]" style={{ color: "var(--warn)" }}>
+                  re-sign is forced on — an edited body can&rsquo;t match the
+                  original signature, so hookd signs the edited bytes with this
+                  endpoint&rsquo;s secret.
+                </span>
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
 
       {delivered && (

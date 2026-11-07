@@ -19,6 +19,16 @@ const POINTS: { term: string; detail: string }[] = [
       "fresh timestamp + the endpoint secret, so replay protection doesn't reject it. or keep the original signature verbatim.",
   },
   {
+    term: "edit, then replay",
+    detail:
+      "tweak the payload — a different amount, a missing field — and we re-sign the edited bytes so your handler still verifies. craft the edge case you can't trigger upstream.",
+  },
+  {
+    term: "or forward straight to localhost",
+    detail:
+      "npx hookd listen <endpoint> --forward localhost:3000 streams live events to your machine, re-signed so verification passes. no tunnel, no ngrok churn.",
+  },
+  {
     term: "set the response, see the result",
     detail:
       "force a 500 to exercise retry logic. every attempt records status, headers, body and latency.",
@@ -34,7 +44,7 @@ export function ReplayResign() {
             index="02"
             kicker="replay"
             title="replay the exact event — re-signed"
-            lead="re-triggering gives you a different event. we re-send the one that broke, with a valid fresh signature, to localhost's stand-in: your staging or deployed url."
+            lead="re-triggering gives you a different event. we re-send the one that broke, with a valid fresh signature — to a staging url, or straight to your localhost with the cli."
           />
           <dl className="flex flex-col gap-5">
             {POINTS.map((p) => (

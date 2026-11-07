@@ -210,10 +210,17 @@ export const events = {
   /** Direct download URL for the exact raw bytes (served as an attachment). */
   bodyURL: (id: string) => `${API_URL}/api/events/${id}/body`,
 
-  replay: (id: string, targetURL: string, resign: boolean) =>
+  /** Replay an event to a target URL. When `body` is provided (F2 edit+replay),
+   *  it is the edited raw payload to send; the backend requires `resign:true`
+   *  with a body (an edited body can't match the original signature) and
+   *  rejects an edited body + resign:false with a 400. */
+  replay: (id: string, targetURL: string, resign: boolean, body?: string) =>
     request<ReplayResult>(`/api/events/${id}/replay`, {
       method: "POST",
-      body: { target_url: targetURL, resign },
+      body:
+        body !== undefined
+          ? { target_url: targetURL, resign, body }
+          : { target_url: targetURL, resign },
     }),
 
   listReplays: (id: string) =>

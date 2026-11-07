@@ -12,7 +12,7 @@ import (
 // request was built correctly.
 type capture struct {
 	method, path, auth, accept, contentType string
-	body                                     map[string]any
+	body                                    map[string]any
 }
 
 // newFake returns an httptest server that records the request into c and replies

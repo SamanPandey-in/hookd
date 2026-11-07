@@ -97,10 +97,15 @@ export default function DocsPage() {
           staging host, wherever. opt into <Mono>re-sign</Mono> and we mint a
           fresh signature with a current timestamp from your signing secret, so
           the receiver verifies it as genuine instead of rejecting a stale skew.
+          toggle <Mono>edit payload</Mono> to tweak the body first (re-sign is
+          then required) and craft an edge-case event you can&rsquo;t easily
+          trigger upstream.
         </p>
         <p className={hint}>
           the response status, latency and body are recorded under{" "}
-          <Mono>attempts</Mono>.
+          <Mono>attempts</Mono>. prefer your own machine?{" "}
+          <Mono>npx hookd listen &lt;id&gt; --forward localhost:3000</Mono>{" "}
+          streams live events straight to a local server.
         </p>
       </DocSection>
 
@@ -165,7 +170,22 @@ GitHub-OAuth cookie instead; agents should use an API key.)
   just a boolean.
 - replay: re-send a captured event to any target url. Opt into re-sign to mint
   a fresh signature + current timestamp from the endpoint's secret, so a
-  receiver verifies it as genuine instead of rejecting a stale skew.
+  receiver verifies it as genuine instead of rejecting a stale skew. You may
+  also edit the body before replaying (re-sign is then required so the signature
+  matches the edited bytes) — useful for crafting an edge-case event you can't
+  easily trigger upstream.
+
+## public signature debugger (no auth, nothing stored)
+POST ${apiBase}/debug/verify
+Paste a secret + the raw request and get the same pass/fail + reason the product
+gives — no account, no storage. Request JSON:
+  { "provider": "stripe",        // optional; omit to auto-detect from headers
+    "secret":   "whsec_...",
+    "headers":  { "Stripe-Signature": "t=...,v1=..." },
+    "body":     "<raw request body as a string>" }
+Response: { provider, status (pass|fail|unknown), cause, summary, details }.
+Rate-limited per IP; stores nothing; logs no secret or body. Great as a quick
+one-shot check or to share "here's why your webhook won't verify".
 
 ## capture a webhook (no auth)
 POST ${apiBase}/i/{endpoint_id}
@@ -186,12 +206,13 @@ provider + secret if set.
 - DELETE /api/endpoints/{id}/secret     clear signing secret
 - POST   /api/endpoints/{id}/sample     inject a sample event {provider?}
 - GET    /api/endpoints/{id}/events     list events; filters: method, verify, q, limit, before
-- GET    /api/endpoints/{id}/stream     Server-Sent Events live stream of new events
+- GET    /api/endpoints/{id}/stream     SSE live stream of new events (API key OR session) — the CLI subscribes here
 - POST   /api/endpoints/{id}/response   set a canned response rule {status, headers?, body?}
-- GET    /api/events/{id}               event detail
-- GET    /api/events/{id}/body          raw body bytes (attachment)
-- POST   /api/events/{id}/replay        replay {target_url, resign}
+- GET    /api/events/{id}               event detail (API key OR session)
+- GET    /api/events/{id}/body          raw body bytes (API key OR session)
+- POST   /api/events/{id}/replay        replay {target_url, resign, body?} (body edits require resign:true)
 - GET    /api/events/{id}/replays       replay attempts
+- POST   /debug/verify                  PUBLIC, no auth — verify a pasted secret+request, stores nothing
 - POST   /api/events/{id}/share         create a public share link
 - GET    /api/keys                      list API keys (prefix only, never the secret)
 - POST   /api/keys                      create {name} -> returns the full key ONCE
@@ -227,6 +248,15 @@ curl -X PUT ${apiBase}/api/endpoints/<id>/secret \\
 # 3) read captured events
 curl ${apiBase}/api/endpoints/<id>/events \\
   -H "Authorization: Bearer whk_live_xxxxxxxx..."
+
+## forward to localhost (CLI)
+Pipe live captured events straight to a local server while you develop:
+  HOOKD_API_KEY=whk_live_... \\
+  npx hookd listen <endpoint_id> --forward http://localhost:3000/webhooks [--resign]
+It subscribes to the endpoint's SSE stream and POSTs each event to your local
+url, preserving method + body. With --resign (and a provider secret via --secret
+or HOOKD_SIGNING_SECRET) it re-signs with a fresh timestamp so your handler's
+verification passes. Defaults: --api ${apiBase}.
 
 ## roadmap
 A hosted hookd MCP server is planned: it will expose this same surface as tools

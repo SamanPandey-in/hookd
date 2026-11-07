@@ -122,6 +122,69 @@ func TestReplayReSignWithoutSecretErrors(t *testing.T) {
 	}
 }
 
+// TestReplayEditedBodyReSignedVerifies is the core F2 guarantee: when an edited
+// body is supplied with re-sign on, the engine sends the EDITED bytes and signs
+// THOSE bytes, so the receiver's own verify.Verify passes for the edited body —
+// and the captured event is never mutated.
+func TestReplayEditedBodyReSignedVerifies(t *testing.T) {
+	const secret = "whsec_test_edit_resign"
+	edited := []byte(`{"amount":99999}`)
+
+	var gotBody []byte
+	var gotSig string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		gotSig = r.Header.Get("Stripe-Signature")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	ev := sampleEvent()
+	original := append([]byte(nil), ev.RawBody...) // snapshot to prove non-mutation
+
+	e := loopbackEngine()
+	attempt, err := e.Replay(context.Background(), Request{
+		Event: ev, TargetURL: srv.URL, Resign: true,
+		Provider: verify.Stripe, Secret: secret, Body: edited,
+	})
+	if err != nil {
+		t.Fatalf("edited re-sign replay: %v", err)
+	}
+	if !attempt.Resigned {
+		t.Error("attempt should be marked resigned")
+	}
+
+	// The sink must have received the EDITED bytes, not the captured body.
+	if string(gotBody) != string(edited) {
+		t.Fatalf("sink received %q, want edited %q", gotBody, edited)
+	}
+
+	// The outgoing signature must verify against the EDITED bytes.
+	hdr := http.Header{}
+	hdr.Set("Stripe-Signature", gotSig)
+	res := verify.Verify(verify.Input{
+		Provider: verify.Stripe, Secret: secret, Headers: hdr, Body: edited,
+	})
+	if res.Status != verify.Pass {
+		t.Fatalf("edited body should verify Pass, got status=%s cause=%s summary=%s",
+			res.Status, res.Cause, res.Summary)
+	}
+
+	// Sanity: the same signature must NOT verify against the ORIGINAL body (proves
+	// we signed the edit, not the capture).
+	resOrig := verify.Verify(verify.Input{
+		Provider: verify.Stripe, Secret: secret, Headers: hdr, Body: original,
+	})
+	if resOrig.Status == verify.Pass {
+		t.Fatal("signature unexpectedly verified against the original body — edit was not signed")
+	}
+
+	// The captured event must be byte-for-byte unchanged.
+	if string(ev.RawBody) != string(original) {
+		t.Fatalf("stored event body was mutated: %q != %q", ev.RawBody, original)
+	}
+}
+
 func TestReplayBlockedTargetRecordsError(t *testing.T) {
 	e := NewEngine(2*time.Second, 1024) // real guard
 	attempt, err := e.Replay(context.Background(), Request{

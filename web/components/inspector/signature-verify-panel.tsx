@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { FieldLabel } from "@/components/ui/panel";
 import { UpgradeLink } from "@/components/ui/upgrade";
-import { CAUSE_HINT, providerLabel } from "@/lib/providers";
+import { CAUSE_HINT, fixForCause, providerLabel } from "@/lib/providers";
 import type { Provider, VerifyCause, VerifyStatus } from "@/lib/types";
 
 // THE hero component (DESIGN §1, §6). Boldness is spent here and in the arrival
@@ -75,6 +75,11 @@ export function SignatureVerifyPanel({
 
   const detailEntries = details ? Object.entries(details).filter(([, v]) => v) : [];
 
+  // F1 — the actionable "Likely fix →" line. Only on FAIL/UNVERIFIED (never on
+  // PASS), and suppressed when the WHY is locked (free accounts): the fix is
+  // part of the WHY the lock already gates. One quiet muted line, not a callout.
+  const fix = !pass && !locked ? fixForCause(cause, details, provider) : "";
+
   return (
     <div
       className={cn(
@@ -113,6 +118,12 @@ export function SignatureVerifyPanel({
             {why}
           </p>
         )
+      )}
+
+      {fix && (
+        <p className="px-4 pb-1 pt-0.5 font-mono text-xs leading-relaxed text-muted break-words">
+          Likely fix → {fix}
+        </p>
       )}
 
       {provider !== undefined && (

@@ -18,14 +18,16 @@ const FREE_FEATURES = [
   "a stable ingest url that never expires",
   "live capture + full raw-request inspect",
   "basic signature verify (pass / fail)",
+  "free signature debugger — see why any webhook fails, no signup",
   "7-day history, capped events",
   "sample payloads to build against",
 ];
 
 /** Exported so the in-app account page shows the same split — no drift. */
 export const PRO_FEATURES = [
-  "verify-explain: the exact cause, every provider",
-  "replay + re-sign to any target url",
+  "verify-explain: the exact cause + the likely fix, every provider",
+  "replay, edit + re-sign to any target url",
+  "forward live events to localhost — npx hookd listen",
   "long / unlimited retention",
   "search + filter your whole history",
   "response control: set status, headers, body",
