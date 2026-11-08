@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { auth, isUnauthorized } from "@/lib/api";
-import type { Me } from "@/lib/types";
+import { auth, billing, isUnauthorized, ApiError } from "@/lib/api";
+import type { Me, Subscription } from "@/lib/types";
+import { isDunning, periodEndLabel } from "@/lib/billing";
+import { formatDate } from "@/lib/utils";
 import { CommandBar } from "@/components/shell/command-bar";
 import { Button } from "@/components/ui/button";
 import { PlanBadge } from "@/components/ui/upgrade";
-import { ErrorBanner } from "@/components/ui/states";
+import { ErrorBanner, SkeletonRows } from "@/components/ui/states";
 
 type AuthState =
   | { kind: "loading" }
@@ -72,6 +74,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           after prerender instead of blocking the build (Next 16 Cache Components). */}
       <React.Suspense fallback={<ShellFallback />}>
       <div className="relative z-10 flex min-h-screen flex-col">
+      {/* App skip-link: first focusable thing, jumps past the command bar to the
+          page content. Visually hidden until focused. */}
+      <a
+        href="#app-main"
+        className="sr-only rounded-sm border border-border bg-surface px-3 py-2 font-mono text-sm text-text focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50"
+      >
+        skip to content
+      </a>
       <CommandBar
         right={
           state.kind === "authed" ? (
@@ -87,9 +97,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           ) : null
         }
       />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+      {state.kind === "authed" && (
+        <DunningBanner subscription={state.me.subscription} />
+      )}
+      <main id="app-main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
         {state.kind === "loading" && (
-          <div className="h-40 animate-pulse rounded-md border border-border bg-surface" />
+          <SkeletonRows className="rounded-md border border-border bg-surface" />
         )}
         {state.kind === "error" && (
           <ErrorBanner
@@ -116,8 +129,89 @@ function ShellFallback() {
     <div className="relative z-10 flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 flex h-14 items-center border-b border-border bg-bg/80 px-4 backdrop-blur-md" />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-        <div className="h-40 animate-pulse rounded-md border border-border bg-surface" />
+        <SkeletonRows className="rounded-md border border-border bg-surface" />
       </main>
+    </div>
+  );
+}
+
+/** Global dunning banner (P0-4). Persistent, non-dismissible, on every authed
+ *  page. Shown only while a charge is failing (past_due / on_hold / failed) —
+ *  these users still look "pro" everywhere else, so this is the one honest
+ *  signal that their access is about to lapse. Coral/--warn, never lime. The
+ *  button reuses the Dodo customer portal to update the payment method. */
+function DunningBanner({ subscription }: { subscription: Subscription | null }) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState<string | null>(null);
+
+  if (!subscription || !isDunning(subscription.status)) return null;
+
+  const due = formatDate(subscription.current_period_end);
+  const dueLabel = periodEndLabel(subscription); // "retrying payment — due"
+
+  const openPortal = async () => {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const { portal_url } = await billing.portal();
+      window.location.href = portal_url;
+    } catch (e) {
+      const msg =
+        e instanceof ApiError ? e.message : (e as Error).message || "failed";
+      setErr(
+        e instanceof ApiError && e.status === 503
+          ? "billing portal isn't available on this deploy yet."
+          : msg,
+      );
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      role="alert"
+      className="relative z-20 border-b"
+      style={{
+        borderColor: "color-mix(in oklab, var(--warn) 45%, var(--border))",
+        background: "color-mix(in oklab, var(--warn) 12%, transparent)",
+      }}
+    >
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className="font-mono text-xs leading-relaxed text-text">
+            <span style={{ color: "var(--warn)" }}>●</span> Your last payment
+            didn&rsquo;t go through — update your payment method to keep pro.
+          </p>
+          {due !== "—" && (
+            <p className="font-mono text-[11px] text-muted tabular-nums">
+              {dueLabel} {due}
+            </p>
+          )}
+          {err && (
+            <p className="font-mono text-[11px]" style={{ color: "var(--fail)" }}>
+              {err}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-fit"
+            disabled={busy}
+            onClick={openPortal}
+          >
+            {busy ? "opening portal" : "update payment method"}
+          </Button>
+          <a
+            href="/support"
+            className="rounded-sm font-mono text-[11px] text-muted underline decoration-dotted underline-offset-2 hover:text-text focus-visible:outline-2"
+          >
+            contact support
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

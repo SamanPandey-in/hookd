@@ -1,86 +1,31 @@
-// Typed client for the API-keys endpoints. Same wire discipline as lib/api.ts:
-// every request carries the session cookie (credentials:"include"), the base
-// URL comes from NEXT_PUBLIC_API_URL via API_URL, and the backend's
-// {"error":...} / 402 {upgrade:true} envelope surfaces as an ApiError. These
-// shapes mirror the Go backend exactly (GET/POST/DELETE /api/keys).
+// Compatibility layer over the canonical typed client in lib/api.ts.
+//
+// RECONCILED: the API-key wire shapes (ApiKey, CreatedApiKey) now live in
+// lib/types.ts as the single source of truth, and the request functions live in
+// lib/api.ts (the one place that knows the wire). This module used to define its
+// OWN divergent copies of those shapes (missing expires_at_ms / last_used_ip);
+// those are gone. It now re-exports the canonical types and the typed client so
+// existing `apiKeys` / `ApiKey` / `CreatedApiKey` imports keep working, and adds
+// the per-plan key caps mirrored from the Go backend for proactive display.
 
-import { API_URL, ApiError } from "./api";
+import { keys } from "./api";
+import type { Plan } from "./types";
 
-/** An API key as listed — the secret itself is NEVER returned here, only a
- *  short display prefix. */
-export interface ApiKey {
-  id: string;
-  name: string;
-  /** Leading mnemonic of the key (e.g. "whk_a1b2c3"); shown as `prefix…`. */
-  prefix: string;
-  created_at_ms: number;
-  /** Epoch ms of the last authenticated call, or null if never used. */
-  last_used_at_ms: number | null;
+export type { ApiKey, CreatedApiKey } from "./types";
+
+/** Per-plan API-key caps, mirrored EXACTLY from server/internal/api/keys.go
+ *  (FreeMaxAPIKeys / ProMaxAPIKeys). The cap is NOT carried on /me.limits, so
+ *  the UI reads it from here to show "used / limit" proactively; the backend is
+ *  still the authority (a create past the cap returns 402 → UpgradePrompt). Keep
+ *  these in sync with keys.go if the caps ever change. */
+export const FREE_MAX_API_KEYS = 2;
+export const PRO_MAX_API_KEYS = 20;
+
+/** The caller's API-key cap for their plan. */
+export function maxApiKeys(plan: Plan): number {
+  return plan === "pro" ? PRO_MAX_API_KEYS : FREE_MAX_API_KEYS;
 }
 
-/** The POST response — the ONLY time the full `key` is returned. Show it once,
- *  then drop it from state; it is unrecoverable afterward. */
-export interface CreatedApiKey {
-  id: string;
-  name: string;
-  /** The full secret, shown exactly once. */
-  key: string;
-  prefix: string;
-  created_at_ms: number;
-}
-
-async function req<T>(
-  path: string,
-  opts: { method?: string; body?: unknown } = {},
-): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(API_URL + path, {
-      method: opts.method ?? "GET",
-      credentials: "include",
-      headers: opts.body ? { "Content-Type": "application/json" } : undefined,
-      body: opts.body ? JSON.stringify(opts.body) : undefined,
-    });
-  } catch (e) {
-    throw new ApiError(0, `could not reach the API at ${API_URL} (${String(e)})`);
-  }
-
-  if (res.status === 204) return undefined as T;
-
-  const text = await res.text();
-  let data: unknown = undefined;
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = text;
-    }
-  }
-
-  if (!res.ok) {
-    const msg =
-      (data && typeof data === "object" && "error" in data
-        ? String((data as { error: unknown }).error)
-        : undefined) || `request failed (${res.status})`;
-    const upgrade =
-      res.status === 402 ||
-      (!!data &&
-        typeof data === "object" &&
-        "upgrade" in data &&
-        Boolean((data as { upgrade: unknown }).upgrade));
-    throw new ApiError(res.status, msg, upgrade);
-  }
-
-  return data as T;
-}
-
-export const apiKeys = {
-  list: () => req<ApiKey[]>("/api/keys"),
-
-  /** Create a key. Returns the full secret ONCE. May throw a 402 ApiError
-   *  (isUpgradeRequired) when the free plan's key cap is hit. */
-  create: (name: string) =>
-    req<CreatedApiKey>("/api/keys", { method: "POST", body: { name } }),
-
-  remove: (id: string) => req<void>(`/api/keys/${id}`, { method: "DELETE" }),
-};
+/** The typed API-key client (list / create / rotate / remove) from lib/api.ts,
+ *  exposed under the historical `apiKeys` name. */
+export const apiKeys = keys;

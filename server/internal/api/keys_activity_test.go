@@ -88,10 +88,14 @@ func TestResolveAPIKey(t *testing.T) {
 	full := created["key"].(string)
 	keyID := created["id"].(string)
 
-	// Resolves to the owner.
-	got, err := a.ResolveAPIKey(context.Background(), full)
+	// Resolves to the owner with full (default) scopes.
+	got, scopes, err := a.ResolveAPIKey(context.Background(), full)
 	if err != nil || got != uid {
 		t.Fatalf("resolve key: got (%d,%v), want %d", got, err, uid)
+	}
+	// A key created without a scopes request defaults to both read and write.
+	if len(scopes) != 2 || !store.ScopesAllow(scopes, store.ScopeRead) || !store.ScopesAllow(scopes, store.ScopeWrite) {
+		t.Fatalf("default key should carry read+write scopes, got %v", scopes)
 	}
 	// last_used_at_ms is stamped after resolution.
 	keys, _ := st.ListAPIKeys(context.Background(), uid)
@@ -100,10 +104,10 @@ func TestResolveAPIKey(t *testing.T) {
 	}
 
 	// Unknown / malformed keys fail.
-	if _, err := a.ResolveAPIKey(context.Background(), "whk_live_deadbeef"); err == nil {
+	if _, _, err := a.ResolveAPIKey(context.Background(), "whk_live_deadbeef"); err == nil {
 		t.Fatal("unknown key must not resolve")
 	}
-	if _, err := a.ResolveAPIKey(context.Background(), "not-a-key"); err == nil {
+	if _, _, err := a.ResolveAPIKey(context.Background(), "not-a-key"); err == nil {
 		t.Fatal("non-whk key must not resolve")
 	}
 
@@ -112,7 +116,7 @@ func TestResolveAPIKey(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("delete key: %d %s", rec.Code, rec.Body.String())
 	}
-	if _, err := a.ResolveAPIKey(context.Background(), full); err == nil {
+	if _, _, err := a.ResolveAPIKey(context.Background(), full); err == nil {
 		t.Fatal("revoked key must not resolve")
 	}
 }
@@ -175,7 +179,7 @@ func TestDeleteAccountCascade(t *testing.T) {
 	if keys, _ := st.ListAPIKeys(context.Background(), uid); len(keys) != 0 {
 		t.Fatalf("api keys not cascaded: %d", len(keys))
 	}
-	if act, _ := st.ListActivity(context.Background(), uid, 50); len(act) != 0 {
+	if act, _ := st.ListActivity(context.Background(), uid, 50, 0); len(act) != 0 {
 		t.Fatalf("activity not cascaded: %d", len(act))
 	}
 }

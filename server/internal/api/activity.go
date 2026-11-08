@@ -16,16 +16,23 @@ func (a *API) recordActivity(ctx context.Context, userID int64, action, target s
 		Action:   action,
 		Target:   target,
 		Metadata: metadata,
+		// IP + device captured best-effort from the request context (set by the
+		// auth middleware via httpx.WithRequestMeta). Empty when unavailable.
+		IP:        httpx.ClientIPFromContext(ctx),
+		UserAgent: httpx.UserAgentFromContext(ctx),
 	})
 }
 
-// ListActivity returns the caller's audit log, newest first (default 50).
+// ListActivity returns the caller's audit log, newest first (default 50). It
+// accepts `limit` and a `before` cursor (unix ms; only rows older than it) for
+// pagination; each row carries ip/user_agent.
 func (a *API) ListActivity(w http.ResponseWriter, r *http.Request) {
 	limit := 50
 	if n := atoiSafe(r.URL.Query().Get("limit")); n > 0 {
 		limit = n
 	}
-	entries, err := a.Store.ListActivity(ctx(r), httpx.UserID(r.Context()), limit)
+	before := atoi64Safe(r.URL.Query().Get("before"))
+	entries, err := a.Store.ListActivity(ctx(r), httpx.UserID(r.Context()), limit, before)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "could not list activity")
 		return

@@ -56,7 +56,8 @@ export function HeadersTable({
             <CopyButton
               value={h.value}
               label={`copy ${h.name}`}
-              className="opacity-0 group-hover/h:opacity-100 focus-visible:opacity-100"
+              // hover-reveal on fine pointers; always visible on touch (no hover)
+              className="opacity-0 group-hover/h:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
             />
           </div>
         );

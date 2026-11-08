@@ -78,11 +78,13 @@ func (p *Postgres) scanUserWhere(ctx context.Context, where string, args ...any)
 	err := p.pool.QueryRow(ctx, `
 		SELECT id, github_id, login, email, avatar_url, name, created_at,
 		       plan, dodo_customer_id, sub_id, sub_status,
-		       sub_current_period_end_ms, sub_cancel_at_period_end
+		       sub_current_period_end_ms, sub_cancel_at_period_end,
+		       theme, billing_email, notify_product, notify_capture_alerts
 		FROM users WHERE `+where, args...,
 	).Scan(&u.ID, &u.GitHubID, &u.Login, &u.Email, &u.AvatarURL, &u.Name, &u.CreatedAt,
 		&u.Plan, &u.DodoCustomerID, &u.Subscription.ID, &u.Subscription.Status,
-		&u.Subscription.CurrentPeriodEnd, &u.Subscription.CancelAtPeriodEnd)
+		&u.Subscription.CurrentPeriodEnd, &u.Subscription.CancelAtPeriodEnd,
+		&u.Theme, &u.BillingEmail, &u.NotifyProduct, &u.NotifyCaptureAlerts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -108,6 +110,32 @@ func (p *Postgres) UpdateUserProfile(ctx context.Context, userID int64, avatarUR
 
 // DeleteAccount removes the user; all owned rows cascade via ON DELETE CASCADE
 // (endpoints -> events -> replay_attempts, api_keys, activity). Wrapped in a tx.
+func (p *Postgres) UpdateUserTheme(ctx context.Context, userID int64, theme string) error {
+	ct, err := p.pool.Exec(ctx, `UPDATE users SET theme=$2 WHERE id=$1`, userID, theme)
+	if err != nil {
+		return fmt.Errorf("store: update user theme: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (p *Postgres) UpdateNotificationPrefs(ctx context.Context, userID int64, prefs NotificationPrefs) error {
+	ct, err := p.pool.Exec(ctx, `
+		UPDATE users
+		SET billing_email=$2, notify_product=$3, notify_capture_alerts=$4
+		WHERE id=$1`,
+		userID, prefs.BillingEmail, prefs.NotifyProduct, prefs.NotifyCaptureAlerts)
+	if err != nil {
+		return fmt.Errorf("store: update notification prefs: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (p *Postgres) DeleteAccount(ctx context.Context, userID int64) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -511,10 +539,16 @@ func (p *Postgres) CreateAPIKey(ctx context.Context, k *APIKey) error {
 	if k.CreatedAtMS == 0 {
 		k.CreatedAtMS = time.Now().UnixMilli()
 	}
+	// An empty/nil scope set is stored as an empty array ('{}'), which means FULL
+	// access (both) — identical to a pre-scopes key. pgx encodes []string as text[].
+	scopes := k.Scopes
+	if scopes == nil {
+		scopes = []string{}
+	}
 	_, err := p.pool.Exec(ctx, `
-		INSERT INTO api_keys (id, user_id, name, key_hash, prefix, created_at_ms, last_used_at_ms)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		k.ID, k.UserID, k.Name, k.KeyHash, k.Prefix, k.CreatedAtMS, k.LastUsedAtMS)
+		INSERT INTO api_keys (id, user_id, name, key_hash, prefix, created_at_ms, last_used_at_ms, expires_at_ms, scopes)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		k.ID, k.UserID, k.Name, k.KeyHash, k.Prefix, k.CreatedAtMS, k.LastUsedAtMS, k.ExpiresAtMS, scopes)
 	if err != nil {
 		return fmt.Errorf("store: create api key: %w", err)
 	}
@@ -523,7 +557,7 @@ func (p *Postgres) CreateAPIKey(ctx context.Context, k *APIKey) error {
 
 func (p *Postgres) ListAPIKeys(ctx context.Context, userID int64) ([]*APIKey, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT id, user_id, name, key_hash, prefix, created_at_ms, last_used_at_ms
+		SELECT id, user_id, name, key_hash, prefix, created_at_ms, last_used_at_ms, expires_at_ms, last_used_ip, scopes
 		FROM api_keys WHERE user_id=$1 ORDER BY created_at_ms DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("store: list api keys: %w", err)
@@ -556,7 +590,7 @@ func (p *Postgres) LookupAPIKeyByHash(ctx context.Context, keyHash string) (*API
 		return nil, ErrNotFound
 	}
 	row := p.pool.QueryRow(ctx, `
-		SELECT id, user_id, name, key_hash, prefix, created_at_ms, last_used_at_ms
+		SELECT id, user_id, name, key_hash, prefix, created_at_ms, last_used_at_ms, expires_at_ms, last_used_ip, scopes
 		FROM api_keys WHERE key_hash=$1`, keyHash)
 	k, err := scanAPIKey(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -568,8 +602,26 @@ func (p *Postgres) LookupAPIKeyByHash(ctx context.Context, keyHash string) (*API
 	return k, nil
 }
 
-func (p *Postgres) TouchAPIKey(ctx context.Context, id string, atMS int64) error {
-	ct, err := p.pool.Exec(ctx, `UPDATE api_keys SET last_used_at_ms=$2 WHERE id=$1`, id, atMS)
+func (p *Postgres) RotateAPIKey(ctx context.Context, id string, userID int64, newHash, newPrefix string) error {
+	// New secret: swap hash/prefix and reset last-used. id/name/expiry are kept.
+	ct, err := p.pool.Exec(ctx, `
+		UPDATE api_keys
+		SET key_hash=$3, prefix=$4, last_used_at_ms=NULL, last_used_ip=''
+		WHERE id=$1 AND user_id=$2`, id, userID, newHash, newPrefix)
+	if err != nil {
+		return fmt.Errorf("store: rotate api key: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (p *Postgres) TouchAPIKey(ctx context.Context, id string, atMS int64, ip string) error {
+	// Keep the previous IP when this call has none (ip='').
+	ct, err := p.pool.Exec(ctx,
+		`UPDATE api_keys SET last_used_at_ms=$2, last_used_ip=CASE WHEN $3='' THEN last_used_ip ELSE $3 END WHERE id=$1`,
+		id, atMS, ip)
 	if err != nil {
 		return fmt.Errorf("store: touch api key: %w", err)
 	}
@@ -584,11 +636,13 @@ func scanAPIKey(s interface{ Scan(...any) error }) (*APIKey, error) {
 	var (
 		k  APIKey
 		lu *int64
+		ex *int64
 	)
-	if err := s.Scan(&k.ID, &k.UserID, &k.Name, &k.KeyHash, &k.Prefix, &k.CreatedAtMS, &lu); err != nil {
+	if err := s.Scan(&k.ID, &k.UserID, &k.Name, &k.KeyHash, &k.Prefix, &k.CreatedAtMS, &lu, &ex, &k.LastUsedIP, &k.Scopes); err != nil {
 		return nil, err
 	}
 	k.LastUsedAtMS = lu
+	k.ExpiresAtMS = ex
 	return &k, nil
 }
 
@@ -601,9 +655,9 @@ func (p *Postgres) InsertActivity(ctx context.Context, a *Activity) error {
 		return fmt.Errorf("store: marshal activity metadata: %w", err)
 	}
 	err = p.pool.QueryRow(ctx, `
-		INSERT INTO activity (user_id, action, target, metadata, created_at_ms)
-		VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		a.UserID, a.Action, a.Target, meta, a.CreatedAtMS,
+		INSERT INTO activity (user_id, action, target, metadata, created_at_ms, ip, user_agent)
+		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+		a.UserID, a.Action, a.Target, meta, a.CreatedAtMS, a.IP, a.UserAgent,
 	).Scan(&a.ID)
 	if err != nil {
 		return fmt.Errorf("store: insert activity: %w", err)
@@ -611,13 +665,21 @@ func (p *Postgres) InsertActivity(ctx context.Context, a *Activity) error {
 	return nil
 }
 
-func (p *Postgres) ListActivity(ctx context.Context, userID int64, limit int) ([]*Activity, error) {
+func (p *Postgres) ListActivity(ctx context.Context, userID int64, limit int, beforeMS int64) ([]*Activity, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
-	rows, err := p.pool.Query(ctx, `
-		SELECT id, user_id, action, target, metadata, created_at_ms
-		FROM activity WHERE user_id=$1 ORDER BY created_at_ms DESC, id DESC LIMIT $2`, userID, limit)
+	conds := []string{"user_id = $1"}
+	args := []any{userID}
+	if beforeMS > 0 {
+		args = append(args, beforeMS)
+		conds = append(conds, fmt.Sprintf("created_at_ms < $%d", len(args)))
+	}
+	args = append(args, limit)
+	q := `SELECT id, user_id, action, target, metadata, created_at_ms, ip, user_agent
+		FROM activity WHERE ` + strings.Join(conds, " AND ") +
+		fmt.Sprintf(" ORDER BY created_at_ms DESC, id DESC LIMIT $%d", len(args))
+	rows, err := p.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: list activity: %w", err)
 	}
@@ -628,7 +690,7 @@ func (p *Postgres) ListActivity(ctx context.Context, userID int64, limit int) ([
 			a    Activity
 			meta []byte
 		)
-		if err := rows.Scan(&a.ID, &a.UserID, &a.Action, &a.Target, &meta, &a.CreatedAtMS); err != nil {
+		if err := rows.Scan(&a.ID, &a.UserID, &a.Action, &a.Target, &meta, &a.CreatedAtMS, &a.IP, &a.UserAgent); err != nil {
 			return nil, fmt.Errorf("store: scan activity: %w", err)
 		}
 		if err := json.Unmarshal(meta, &a.Metadata); err != nil {

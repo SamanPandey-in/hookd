@@ -202,3 +202,50 @@ export const THEMES: ThemeMeta[] = [
 
 /** All valid theme ids, in picker order — pass straight to next-themes. */
 export const THEME_IDS: string[] = THEMES.map((t) => t.id);
+
+/**
+ * The follow-OS choice. NOT a member of THEMES/THEME_IDS: it is a sentinel
+ * stored in localStorage/account as "system" and resolved at runtime by
+ * next-themes (`enableSystem`) to one of the two BRAND themes —
+ *   OS prefers dark  → `hookd`       (the :root default tokens)
+ *   OS prefers light → `hookd-light` (the `data-theme="light"` alias)
+ * next-themes writes `data-theme="dark"` / `data-theme="light"` for the two OS
+ * states; globals.css already maps those to the brand palettes, so no new token
+ * set is needed. See components/theme-provider.tsx for the full rationale.
+ */
+export const SYSTEM_THEME_ID = "system";
+
+/**
+ * Metadata for the "system / follow-OS" picker card. Unlike a ThemeMeta it has
+ * no single swatch — its preview is a split of the two brand themes it toggles
+ * between, so it carries both brand swatches.
+ */
+export interface SystemThemeMeta {
+  id: typeof SYSTEM_THEME_ID;
+  label: string;
+  blurb: string;
+  dark: ThemeSwatch;
+  light: ThemeSwatch;
+}
+
+/** Look up a theme's swatch by id, falling back to the brand default. */
+function swatchOf(id: string): ThemeSwatch {
+  return (THEMES.find((t) => t.id === id) ?? THEMES[0]).swatch;
+}
+
+export const SYSTEM_THEME: SystemThemeMeta = {
+  id: SYSTEM_THEME_ID,
+  label: "System",
+  blurb: "Follow your OS — hookd in the dark, hookd light in the light.",
+  dark: swatchOf("hookd"),
+  light: swatchOf("hookd-light"),
+};
+
+/**
+ * Whether a stored/account value is a theme the app can apply: one of the 8
+ * explicit ids OR the "system" sentinel. Used by the picker's mount logic so a
+ * server-saved `me.theme === "system"` is honored rather than ignored.
+ */
+export function isThemeChoice(value: string): boolean {
+  return value === SYSTEM_THEME_ID || THEME_IDS.includes(value);
+}

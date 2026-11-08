@@ -56,24 +56,63 @@ export function StatusGlyph({
   );
 }
 
-/** The live indicator in the command bar: a slowly-pulsing accent dot. */
+/** The connection states a live feed can be in (mirrors use-event-stream's
+ *  StreamStatus). A dead feed must look distinct from a live one — greying the
+ *  dot while it still reads "live" hides stream loss (P1-10). */
+type LiveStatus = "idle" | "connecting" | "open" | "error";
+
+const LIVE_VIEW: Record<
+  LiveStatus,
+  { label: string; color: string; pulse: boolean }
+> = {
+  // accent doubles as the live hue (DESIGN §8 / --accent comment).
+  open: { label: "live", color: "var(--accent)", pulse: true },
+  connecting: { label: "connecting…", color: "var(--warn)", pulse: true },
+  error: { label: "reconnecting…", color: "var(--warn)", pulse: true },
+  idle: { label: "offline", color: "var(--muted)", pulse: false },
+};
+
+/**
+ * The live indicator in the command bar. Two forms:
+ *  - `status` (preferred): drives distinct live / connecting… / reconnecting… /
+ *    offline states straight off the SSE connection, so a dropped feed is
+ *    visible rather than silently idle.
+ *  - `on` (legacy boolean): a simple accent-pulse-or-muted dot for the static
+ *    marketing / gallery surfaces that don't track a real connection.
+ */
 export function LiveDot({
   on,
+  status,
   className,
-  label = "live",
+  label,
 }: {
-  on: boolean;
+  on?: boolean;
+  status?: LiveStatus;
   className?: string;
   label?: string;
 }) {
+  const view = status
+    ? LIVE_VIEW[status]
+    : {
+        label: label ?? (on ? "live" : "idle"),
+        color: on ? "var(--accent)" : "var(--muted)",
+        pulse: !!on,
+      };
+  const text = status ? (label ?? view.label) : view.label;
   return (
-    <span className={cn("inline-flex items-center gap-1.5", className)}>
+    <span
+      className={cn("inline-flex items-center gap-1.5", className)}
+      title={view.label}
+    >
       <span
         aria-hidden
-        className={cn("inline-block h-2 w-2 rounded-full", on && "animate-live")}
-        style={{ background: on ? "var(--accent)" : "var(--muted)" }}
+        className={cn(
+          "inline-block h-2 w-2 rounded-full",
+          view.pulse && "animate-live",
+        )}
+        style={{ background: view.color }}
       />
-      <span className="font-mono text-xs text-muted">{label}</span>
+      <span className="font-mono text-xs text-muted">{text}</span>
     </span>
   );
 }

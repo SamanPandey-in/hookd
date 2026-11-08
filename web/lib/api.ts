@@ -4,10 +4,14 @@
 // shapes — components import typed functions, never raw fetch.
 
 import type {
+  ActivityEntry,
+  ApiKey,
+  CreatedApiKey,
   Endpoint,
   EventDetail,
   EventSummary,
   Me,
+  NotificationPreferences,
   Provider,
   ReplayAttempt,
   ReplayResult,
@@ -129,6 +133,83 @@ export const billing = {
 
   /** The customer portal URL. 409 {error:"no subscription"} when there is none. */
   portal: () => request<{ portal_url: string }>("/api/billing/portal"),
+};
+
+// ---- Account (settings) ----------------------------------------------------
+// Theme sync, notification preferences (+ billing email), and GDPR data export.
+// All are session-only. NOTE: notification DELIVERY is deferred on the backend
+// (no mail provider is wired) — these endpoints only store/read intent.
+
+export const account = {
+  /** Persist the account-synced appearance theme. "" clears the preference. */
+  setTheme: (theme: string) =>
+    request<{ theme: string }>("/api/account/theme", {
+      method: "PUT",
+      body: { theme },
+    }),
+
+  /** Read the caller's notification preferences + billing email. */
+  getNotifications: () =>
+    request<NotificationPreferences>("/api/account/notifications"),
+
+  /** Save notification preferences + billing email (stored, not yet delivered). */
+  setNotifications: (prefs: NotificationPreferences) =>
+    request<NotificationPreferences>("/api/account/notifications", {
+      method: "PUT",
+      body: prefs,
+    }),
+
+  /** Direct download URL for the caller's GDPR data export (JSON attachment,
+   *  scoped strictly to the signed-in user). Navigate to it; not a fetch. */
+  exportURL: () => `${API_URL}/api/account/export`,
+};
+
+// ---- API keys --------------------------------------------------------------
+// The secret is returned ONLY by create/rotate, exactly once. create may throw
+// a 402 ApiError (isUpgradeRequired) when the plan's key cap is hit.
+
+export const keys = {
+  list: () => request<ApiKey[]>("/api/keys"),
+
+  /** Create a key. `opts.expiresAtMs` (epoch ms, must be in the future) is
+   *  optional; omit it for a key that never expires. `opts.scopes` narrows the
+   *  key (subset of ["read","write"]); omit for full access (both). A bare
+   *  number second arg is still accepted for backward compatibility (= expiry).
+   *  Returns the full secret ONCE. */
+  create: (
+    name: string,
+    opts?: number | { expiresAtMs?: number; scopes?: string[] },
+  ) => {
+    const o = typeof opts === "number" ? { expiresAtMs: opts } : (opts ?? {});
+    return request<CreatedApiKey>("/api/keys", {
+      method: "POST",
+      body: {
+        name,
+        expires_at_ms: o.expiresAtMs ?? null,
+        // Omit scopes entirely when not narrowing so the backend defaults to both.
+        ...(o.scopes && o.scopes.length > 0 ? { scopes: o.scopes } : {}),
+      },
+    });
+  },
+
+  /** Rotate a key's secret in place (same id/name/expiry). Returns the NEW
+   *  full secret ONCE; the old secret stops working immediately. */
+  rotate: (id: string) =>
+    request<CreatedApiKey>(`/api/keys/${id}/rotate`, { method: "POST" }),
+
+  remove: (id: string) =>
+    request<void>(`/api/keys/${id}`, { method: "DELETE" }),
+};
+
+// ---- Activity log ----------------------------------------------------------
+
+export const activity = {
+  /** The caller's audit log, newest first. `before` (epoch ms) pages older
+   *  rows; each row carries ip/user_agent. */
+  list: (opts?: { limit?: number; before?: number }) =>
+    request<ActivityEntry[]>("/api/activity", {
+      query: { limit: opts?.limit, before: opts?.before },
+    }),
 };
 
 // ---- Endpoints -------------------------------------------------------------

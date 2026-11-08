@@ -22,7 +22,7 @@ export default function HomePage() {
       <SiteBackdrop />
       <MarketingNav />
 
-      <main className="relative z-10 flex-1">
+      <main id="main" className="relative z-10 flex-1">
         <Hero />
         <VerifyExplain />
         <ReplayResign />
@@ -71,6 +71,15 @@ export default function HomePage() {
               private, unguessable urls · bodies encrypted, never logged
             </p>
           </div>
+
+          {/* Honest trust signal — built in the open, no fabricated metrics. */}
+          <p className="mt-6 flex items-center justify-center gap-2 font-mono text-[11px] text-muted">
+            <span
+              aria-hidden
+              className="inline-block h-1.5 w-1.5 rounded-full bg-accent"
+            />
+            built in public · week 2 of the weekly-ship challenge
+          </p>
         </Section>
       </main>
 

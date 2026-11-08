@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Search, CornerDownLeft } from "lucide-react";
 import { endpoints as endpointsApi } from "@/lib/api";
@@ -11,8 +12,17 @@ import { StatusGlyph } from "@/components/ui/status";
 // ⌘K command palette (DESIGN §5.1): jump endpoints, filter the stream, replay.
 // It is the one surface allowed a shadow (DESIGN §4). Keyboard-first: ↑/↓ move,
 // enter runs, esc closes. Opening/closing is owned by the inspector.
+//
+// A11y (P1-16): the palette is a real modal. It portals to <body>, marks every
+// other body child `inert` + `aria-hidden` while open (so Tab can't escape
+// behind it and SRs don't read the shell), traps Tab within the dialog as a
+// belt-and-suspenders, and restores focus to whatever opened it on close.
+// The input is a combobox driving the listbox via aria-activedescendant.
 
 export type VerifyFilter = "" | "pass" | "fail";
+
+const LISTBOX_ID = "command-palette-listbox";
+const optionId = (i: number) => `command-palette-option-${i}`;
 
 interface Item {
   id: string;
@@ -45,6 +55,8 @@ export function CommandPalette({
   const [eps, setEps] = React.useState<Endpoint[]>([]);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const dialogRef = React.useRef<HTMLDivElement>(null);
 
   // Load endpoints lazily the first time the palette opens.
   const load = React.useCallback(async () => {
@@ -56,15 +68,39 @@ export function CommandPalette({
     }
   }, []);
 
+  // The modal lifecycle, in ONE effect so cleanup order is guaranteed: restore
+  // the shell (remove inert) BEFORE returning focus to the opener — otherwise
+  // the opener would still be inert and .focus() would no-op.
   React.useEffect(() => {
     if (!open) return;
-    // Reset per-open and focus the input. setState after an awaited call (load)
-    // is effect-safe; the synchronous resets seed a known initial state.
+    const opener =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const root = rootRef.current;
+    const managed: Element[] = [];
+    for (const child of Array.from(document.body.children)) {
+      if (child === root) continue;
+      // Don't clobber anything already hidden for its own reasons.
+      if (child.getAttribute("aria-hidden") === "true") continue;
+      child.setAttribute("inert", "");
+      child.setAttribute("aria-hidden", "true");
+      managed.push(child);
+    }
+    // Reset per-open; setState-after-mount here seeds a known initial state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuery("");
     setActive(0);
-    inputRef.current?.focus();
     load();
+    const t = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => {
+      window.clearTimeout(t);
+      for (const child of managed) {
+        child.removeAttribute("inert");
+        child.removeAttribute("aria-hidden");
+      }
+      opener?.focus?.();
+    };
   }, [open, load]);
 
   const close = React.useCallback(() => {
@@ -134,6 +170,13 @@ export function CommandPalette({
     setActive((a) => Math.min(a, Math.max(0, filtered.length - 1)));
   }, [filtered.length]);
 
+  // Scroll the active option into view as arrows move through the list.
+  React.useEffect(() => {
+    if (!open) return;
+    const el = document.getElementById(optionId(active));
+    el?.scrollIntoView({ block: "nearest" });
+  }, [active, open, filtered.length]);
+
   if (!open) return null;
 
   const run = (it: Item | undefined) => {
@@ -155,11 +198,34 @@ export function CommandPalette({
     } else if (e.key === "Enter") {
       e.preventDefault();
       run(filtered[active]);
+    } else if (e.key === "Tab") {
+      // Focus trap: keep Tab inside the dialog even where `inert` isn't honored.
+      const root = dialogRef.current;
+      if (!root) return;
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'input, button, [href], [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hasAttribute("disabled"));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const activeEl = document.activeElement;
+      if (e.shiftKey) {
+        if (activeEl === first || !root.contains(activeEl)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (activeEl === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   };
 
-  return (
+  return createPortal(
     <div
+      ref={rootRef}
       className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[12vh]"
       role="presentation"
       onMouseDown={(e) => {
@@ -171,6 +237,7 @@ export function CommandPalette({
         className="absolute inset-0 bg-[color-mix(in_oklab,var(--bg)_70%,transparent)]"
       />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="command palette"
@@ -185,6 +252,13 @@ export function CommandPalette({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="jump to an endpoint, filter, replay…"
             aria-label="command"
+            role="combobox"
+            aria-expanded
+            aria-controls={LISTBOX_ID}
+            aria-autocomplete="list"
+            aria-activedescendant={
+              filtered.length > 0 ? optionId(active) : undefined
+            }
             className="h-11 w-full bg-transparent font-sans text-sm text-text outline-none placeholder:text-muted"
           />
           <kbd className="shrink-0 rounded-sm border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted">
@@ -194,6 +268,7 @@ export function CommandPalette({
 
         <div
           ref={listRef}
+          id={LISTBOX_ID}
           role="listbox"
           aria-label="commands"
           className="max-h-[50vh] overflow-auto py-1"
@@ -204,8 +279,10 @@ export function CommandPalette({
           {filtered.map((it, i) => (
             <button
               key={it.id}
+              id={optionId(i)}
               type="button"
               role="option"
+              tabIndex={-1}
               onMouseEnter={() => setActive(i)}
               onClick={() => run(it)}
               aria-selected={i === active}
@@ -232,6 +309,7 @@ export function CommandPalette({
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

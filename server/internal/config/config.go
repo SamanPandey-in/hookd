@@ -52,6 +52,19 @@ type Config struct {
 	ReplayTimeout     time.Duration // per replay attempt timeout
 	MaxReplayRespBody int64         // cap on stored replay response body
 
+	// Transactional email (OPTIONAL — INERT BY DEFAULT). These wire the drop-in
+	// SMTP sender in internal/email. When SMTPHost or EmailFrom is empty, email is
+	// inert: the no-op sender logs "would send" and delivers nothing, so the server
+	// runs unchanged. Set all of SMTP_HOST/PORT/USERNAME/PASSWORD + EMAIL_FROM to
+	// turn on real delivery (currently used only for dunning "payment failing"
+	// notices; never receipts — Dodo is MoR — and never marketing). The password is
+	// never logged.
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	EmailFrom    string
+
 	// PurgeInterval is how often the retention purger deletes expired events.
 	// Zero disables the purger (events are then kept forever).
 	PurgeInterval time.Duration
@@ -126,6 +139,15 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	c.ReplayTimeout = time.Duration(secs) * time.Second
+
+	// Transactional email (optional; inert unless SMTP_HOST + EMAIL_FROM are set).
+	c.SMTPHost = strings.TrimSpace(os.Getenv("SMTP_HOST"))
+	c.SMTPUsername = os.Getenv("SMTP_USERNAME")
+	c.SMTPPassword = os.Getenv("SMTP_PASSWORD")
+	c.EmailFrom = strings.TrimSpace(os.Getenv("EMAIL_FROM"))
+	if c.SMTPPort, err = envInt("SMTP_PORT", 587); err != nil {
+		return nil, err
+	}
 
 	purgeMins, err := envInt("PURGE_INTERVAL_MINUTES", 60)
 	if err != nil {

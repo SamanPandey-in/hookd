@@ -8,12 +8,25 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"whook/internal/dodo"
+	"whook/internal/email"
 	"whook/internal/httpx"
 	"whook/internal/store"
 	"whook/internal/verify"
 )
+
+// captureSender is a test email.Sender that records sent messages on a buffered
+// channel so the dunning trigger can be asserted deterministically.
+type captureSender struct{ sent chan email.Message }
+
+func newCaptureSender() *captureSender { return &captureSender{sent: make(chan email.Message, 8)} }
+
+func (c *captureSender) Send(_ context.Context, msg email.Message) error {
+	c.sent <- msg
+	return nil
+}
 
 // testWebhookSecret is a valid Standard-Webhooks symmetric secret (whsec_ + base64).
 var testWebhookSecret = "whsec_" + base64.StdEncoding.EncodeToString([]byte("dodo-webhook-signing-key-0123456789"))
@@ -182,6 +195,52 @@ func TestDodoWebhookCancelDowngrades(t *testing.T) {
 	got, _ := st.GetUser(context.Background(), u.ID)
 	if got.Plan != "free" {
 		t.Fatalf("expired subscription should drop to free, got %q", got.Plan)
+	}
+}
+
+func TestDodoWebhookDunningEmailOnTransition(t *testing.T) {
+	st := store.NewFake()
+	u, _ := st.UpsertUserByGitHub(context.Background(), 55, "priya", "priya@x.com")
+	_ = st.SetUserDodoCustomer(context.Background(), u.ID, "cus_42")
+	// Start from an active Pro subscription so past_due is a fresh transition.
+	_ = st.UpdateUserSubscription(context.Background(), u.ID, "pro", store.Subscription{Status: "active", ID: "sub_1"})
+
+	sender := newCaptureSender()
+	b := newBilling(st, nil)
+	b.Email = sender
+
+	// active -> past_due: a transition INTO dunning, one email to the login email.
+	body := []byte(`{"type":"subscription.past_due","data":{"payload_type":"Subscription","subscription_id":"sub_1","status":"past_due","next_billing_date":"2026-12-03T00:00:00Z","customer":{"customer_id":"cus_42"}}}`)
+	rec := httptest.NewRecorder()
+	b.Webhook(rec, signedDodoReq(t, body))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("past_due webhook: %d %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case msg := <-sender.sent:
+		if msg.To != "priya@x.com" {
+			t.Fatalf("dunning email should go to the login email, got %q", msg.To)
+		}
+		if msg.Body == "" || msg.Subject == "" {
+			t.Fatalf("dunning email must have a subject + body")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected a dunning email on transition into past_due")
+	}
+
+	// A SECOND past_due webhook (different body => new webhook-id, but still
+	// past_due): NOT a transition, so NO new email.
+	body2 := []byte(`{"type":"subscription.past_due","data":{"payload_type":"Subscription","subscription_id":"sub_1","status":"past_due","next_billing_date":"2026-12-05T00:00:00Z","customer":{"customer_id":"cus_42"}}}`)
+	rec2 := httptest.NewRecorder()
+	b.Webhook(rec2, signedDodoReq(t, body2))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second past_due webhook: %d %s", rec2.Code, rec2.Body.String())
+	}
+	select {
+	case msg := <-sender.sent:
+		t.Fatalf("no second email expected (not a transition), got one to %q", msg.To)
+	case <-time.After(300 * time.Millisecond):
+		// good — no email on a repeat dunning webhook.
 	}
 }
 

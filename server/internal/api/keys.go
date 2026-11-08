@@ -58,19 +58,29 @@ func hashKey(raw string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// ResolveAPIKey authenticates a raw API key to its owning user id and records
-// last-used (best-effort). It is passed to auth.AuthSessionOrKey.
-func (a *API) ResolveAPIKey(ctx context.Context, raw string) (int64, error) {
+// ResolveAPIKey authenticates a raw API key to its owning user id + the key's
+// scopes, and records last-used (best-effort). It is passed to
+// auth.AuthSessionOrKey, which stashes the scopes on the request context so
+// per-route enforcement can 403 a narrowed key. An empty scope set means FULL
+// access (both) — a pre-scopes key.
+func (a *API) ResolveAPIKey(ctx context.Context, raw string) (int64, []string, error) {
 	raw = strings.TrimSpace(raw)
 	if !strings.HasPrefix(raw, "whk_") {
-		return 0, errors.New("api: not an api key")
+		return 0, nil, errors.New("api: not an api key")
 	}
 	k, err := a.Store.LookupAPIKeyByHash(ctx, hashKey(raw))
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	_ = a.Store.TouchAPIKey(ctx, k.ID, time.Now().UnixMilli())
-	return k.UserID, nil
+	now := time.Now().UnixMilli()
+	// Enforce expiry: an expired key authenticates nothing (middleware -> 401).
+	if k.ExpiresAtMS != nil && now >= *k.ExpiresAtMS {
+		return 0, nil, errors.New("api: api key expired")
+	}
+	// Record last-used time + client IP (best-effort; never blocks auth). The IP
+	// is stashed on the context by the auth middleware (WithRequestMeta).
+	_ = a.Store.TouchAPIKey(ctx, k.ID, now, httpx.ClientIPFromContext(ctx))
+	return k.UserID, k.Scopes, nil
 }
 
 // ListKeys returns the caller's API keys (masked — never the key itself).
@@ -83,11 +93,24 @@ func (a *API) ListKeys(w http.ResponseWriter, r *http.Request) {
 	if keys == nil {
 		keys = []*store.APIKey{}
 	}
+	// Ensure scopes always serialize as a JSON array (never null) so the client's
+	// `scopes: string[]` shape holds. An empty array means full access (both).
+	for _, k := range keys {
+		if k.Scopes == nil {
+			k.Scopes = []string{}
+		}
+	}
 	httpx.JSON(w, http.StatusOK, keys)
 }
 
 type createKeyReq struct {
 	Name string `json:"name"`
+	// ExpiresAtMS is an optional expiry (unix ms); nil/0 => never expires.
+	ExpiresAtMS *int64 `json:"expires_at_ms"`
+	// Scopes optionally narrows the key. Omitted/empty => both read and write
+	// (full access). Accepts any subset of {"read","write"}; unknown entries are
+	// ignored, and a non-empty set with no recognized scope is rejected (400).
+	Scopes []string `json:"scopes"`
 }
 
 // CreateKey issues a new API key and returns the full key exactly once.
@@ -96,6 +119,29 @@ func (a *API) CreateKey(w http.ResponseWriter, r *http.Request) {
 	// Body is optional; a key may be created without a name.
 	_ = httpx.DecodeJSON(w, r, a.MaxJSONBody, &req)
 	req.Name = strings.TrimSpace(req.Name)
+
+	// A provided expiry must be in the future.
+	expiresAt := req.ExpiresAtMS
+	if expiresAt != nil {
+		if *expiresAt == 0 {
+			expiresAt = nil
+		} else if *expiresAt <= time.Now().UnixMilli() {
+			httpx.Error(w, http.StatusBadRequest, "expires_at_ms must be in the future")
+			return
+		}
+	}
+
+	// Resolve scopes: default to full (read+write) when the caller does not narrow
+	// the key; otherwise validate the requested subset.
+	scopes := store.FullScopes()
+	if len(req.Scopes) > 0 {
+		normalized, ok := store.NormalizeScopes(req.Scopes)
+		if !ok {
+			httpx.Error(w, http.StatusBadRequest, `scopes must be a subset of ["read","write"]`)
+			return
+		}
+		scopes = normalized
+	}
 
 	uid := httpx.UserID(r.Context())
 	// Enforce the per-plan key cap.
@@ -116,6 +162,8 @@ func (a *API) CreateKey(w http.ResponseWriter, r *http.Request) {
 		KeyHash:     hash,
 		Prefix:      prefix,
 		CreatedAtMS: time.Now().UnixMilli(),
+		ExpiresAtMS: expiresAt,
+		Scopes:      scopes,
 	}
 	if err := a.Store.CreateAPIKey(ctx(r), k); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "could not create api key")
@@ -128,7 +176,52 @@ func (a *API) CreateKey(w http.ResponseWriter, r *http.Request) {
 		"key":           full, // shown exactly once; never persisted or returned again
 		"prefix":        k.Prefix,
 		"created_at_ms": k.CreatedAtMS,
+		"expires_at_ms": k.ExpiresAtMS,
+		"scopes":        scopesOut(k.Scopes),
 	})
+}
+
+// RotateKey issues a NEW secret for an existing key, keeping its id/name/expiry
+// and resetting last-used. The new plaintext is returned exactly once; the old
+// secret stops authenticating immediately.
+func (a *API) RotateKey(w http.ResponseWriter, r *http.Request) {
+	uid := httpx.UserID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	full, hash, prefix := newAPIKey()
+	if err := a.Store.RotateAPIKey(ctx(r), id, uid, hash, prefix); err != nil {
+		if isNotFound(err) {
+			httpx.Error(w, http.StatusNotFound, "api key not found")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "could not rotate api key")
+		return
+	}
+
+	// Re-read the rotated key so the response carries its retained metadata.
+	var rotated *store.APIKey
+	if keys, err := a.Store.ListAPIKeys(ctx(r), uid); err == nil {
+		for _, k := range keys {
+			if k.ID == id {
+				rotated = k
+			}
+		}
+	}
+	resp := map[string]any{
+		"id":     id,
+		"key":    full, // shown exactly once; never persisted or returned again
+		"prefix": prefix,
+	}
+	if rotated != nil {
+		resp["name"] = rotated.Name
+		resp["created_at_ms"] = rotated.CreatedAtMS
+		resp["expires_at_ms"] = rotated.ExpiresAtMS
+		resp["scopes"] = scopesOut(rotated.Scopes) // rotation preserves scopes
+		a.recordActivity(ctx(r), uid, "key.rotated", keyLabel(rotated), map[string]string{"prefix": prefix})
+	} else {
+		a.recordActivity(ctx(r), uid, "key.rotated", prefix, map[string]string{"prefix": prefix})
+	}
+	httpx.JSON(w, http.StatusOK, resp)
 }
 
 // DeleteKey revokes one of the caller's API keys.
@@ -154,6 +247,15 @@ func (a *API) DeleteKey(w http.ResponseWriter, r *http.Request) {
 	}
 	a.recordActivity(ctx(r), uid, "key.revoked", label, nil)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// scopesOut normalizes a key's scope set for JSON output so it is always an
+// array (never null). An empty array means full access (both read and write).
+func scopesOut(scopes []string) []string {
+	if scopes == nil {
+		return []string{}
+	}
+	return scopes
 }
 
 // keyLabel is a short human label for the activity log (name or prefix).

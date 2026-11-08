@@ -46,6 +46,12 @@ func hmac1(key, msg []byte) []byte {
 func hexEnc(b []byte) string { return hex.EncodeToString(b) }
 func b64Enc(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
 
+// sha256Hex is the lowercase-hex SHA-256 of b (Twilio's bodySHA256 value).
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
 // encode renders a raw digest in the scheme's canonical encoding.
 func encode(enc string, raw []byte) string {
 	if enc == encBase64 {

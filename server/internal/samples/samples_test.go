@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	neturl "net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,9 +31,19 @@ func TestSamplesAreWellFormed(t *testing.T) {
 		if len(s.Body) == 0 {
 			t.Errorf("%s: empty Body", p)
 		}
-		var js any
-		if err := json.Unmarshal(s.Body, &js); err != nil {
-			t.Errorf("%s: Body is not valid JSON: %v", p, err)
+		// A sample body must be well-formed for its content type: JSON bodies must
+		// parse as JSON; form-encoded bodies (Twilio) must parse as a query with at
+		// least one key.
+		if strings.Contains(s.ContentType, "x-www-form-urlencoded") {
+			vals, err := neturl.ParseQuery(string(s.Body))
+			if err != nil || len(vals) == 0 {
+				t.Errorf("%s: Body is not valid form-encoding: %v", p, err)
+			}
+		} else {
+			var js any
+			if err := json.Unmarshal(s.Body, &js); err != nil {
+				t.Errorf("%s: Body is not valid JSON: %v", p, err)
+			}
 		}
 	}
 }
@@ -62,28 +74,38 @@ func TestSignedSamplesVerifyAsPass(t *testing.T) {
 	// whsec_-prefixed base64 secret round-trips for all of them.
 	secret := "whsec_" + base64.StdEncoding.EncodeToString([]byte("sample-signing-secret-key-000001"))
 	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	// A representative ingest URL for the URL-bound scheme (Twilio); the other
+	// providers ignore it, so passing it everywhere is harmless.
+	const sampleURL = "https://api.hookd.dev/i/ep_sample"
 
 	for _, p := range Providers() {
 		t.Run(string(p), func(t *testing.T) {
 			s, _ := For(p)
 
 			signed := verify.Sign(verify.SignInput{
-				Provider: p, Secret: secret, Body: s.Body, Now: now,
+				Provider: p, Secret: secret, Body: s.Body, Now: now, URL: sampleURL,
 			})
 			if signed.Err != nil {
 				t.Fatalf("Sign(%s): %v", p, signed.Err)
 			}
 
 			h := http.Header{}
+			h.Set("Content-Type", s.ContentType)
 			for k, v := range s.Headers {
 				h.Set(k, v)
 			}
 			for k, v := range signed.Headers {
 				h.Set(k, v)
 			}
+			// A URL-bound signer may rewrite the URL (Twilio JSON mode); use the
+			// returned one when present so sign and verify agree.
+			verifyURL := sampleURL
+			if signed.URL != "" {
+				verifyURL = signed.URL
+			}
 
 			res := verify.Verify(verify.Input{
-				Provider: p, Secret: secret, Headers: h, Body: s.Body, Now: now,
+				Provider: p, Secret: secret, Headers: h, Body: s.Body, Now: now, URL: verifyURL,
 			})
 			if res.Status != verify.Pass {
 				t.Fatalf("%s sample did not verify as PASS: status=%s cause=%s summary=%q",

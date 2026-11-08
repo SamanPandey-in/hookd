@@ -227,6 +227,53 @@ func TestMeIncludesProfileFields(t *testing.T) {
 	}
 }
 
+func TestMeIncludesThemeAndThemeSync(t *testing.T) {
+	srv, st, cookie := buildTestServer(t)
+	client := srv.Client()
+
+	me := func() map[string]any {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/me", nil)
+		req.AddCookie(cookie)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var m map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&m)
+		return m
+	}
+
+	// Fresh user: theme is present and empty (no account preference yet).
+	m := me()
+	if v, ok := m["theme"]; !ok || v != "" {
+		t.Fatalf("/api/me must include an (empty) theme, got %v ok=%v", m["theme"], ok)
+	}
+
+	// Set the theme via the account endpoint.
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/account/theme",
+		strings.NewReader(`{"theme":"mono-dark"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT /api/account/theme: %d", resp.StatusCode)
+	}
+
+	if m = me(); m["theme"] != "mono-dark" {
+		t.Fatalf("/api/me should reflect the synced theme, got %v", m["theme"])
+	}
+	// And it is persisted on the user row.
+	u, _ := st.UpsertUserByGitHub(context.Background(), 777, "octocat", "o@x.com")
+	if got, _ := st.GetUser(context.Background(), u.ID); got.Theme != "mono-dark" {
+		t.Fatalf("theme not persisted on the user row, got %q", got.Theme)
+	}
+}
+
 func TestAPIKeyAuthOnProgrammaticRoute(t *testing.T) {
 	srv, _, cookie := buildTestServer(t)
 	client := srv.Client()

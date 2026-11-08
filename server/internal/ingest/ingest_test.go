@@ -2,6 +2,9 @@ package ingest
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,6 +87,51 @@ func TestCaptureStoresExactBodyAndMeta(t *testing.T) {
 	}
 	if ev.ReceivedAtMS == 0 {
 		t.Error("received_at_ms not set")
+	}
+}
+
+// TestCaptureTwilioVerifiesWithForwardedURL proves the capture path reconstructs
+// the external URL from X-Forwarded-Proto/Host and verifies a URL-bound Twilio
+// signature as PASS — the whole point of threading the URL into the engine.
+func TestCaptureTwilioVerifiesWithForwardedURL(t *testing.T) {
+	h, st, _ := testHandler(t)
+	ep := &store.Endpoint{OwnerID: 1, Provider: "twilio"}
+	if err := st.CreateEndpoint(context.Background(), ep); err != nil {
+		t.Fatal(err)
+	}
+	const token = "twilio_auth_token_sample"
+	enc, err := h.cipher.EncryptString(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetEndpointSecret(context.Background(), ep.ID, enc, "tw…"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The URL the handler will reconstruct from the forwarded headers.
+	fullURL := "https://api.hookd.dev/i/" + ep.ID
+	body := "A=1&B=2&MessageSid=SM0001"
+	// Independent expected signature: URL + sorted(key+value), HMAC-SHA1 base64.
+	data := fullURL + "A1B2MessageSidSM0001"
+	mac := hmac.New(sha1.New, []byte(token))
+	mac.Write([]byte(data))
+	sig := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/i/"+ep.ID, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "api.hookd.dev")
+	req.Header.Set("X-Twilio-Signature", sig)
+	rec := httptest.NewRecorder()
+	router(h).ServeHTTP(rec, req)
+
+	evs, _ := st.ListEvents(context.Background(), ep.ID, store.EventFilter{})
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 stored event, got %d", len(evs))
+	}
+	if evs[0].VerifyStatus != "pass" {
+		t.Fatalf("Twilio capture should verify PASS, got status=%q cause=%q summary=%q",
+			evs[0].VerifyStatus, evs[0].VerifyCause, evs[0].VerifySummary)
 	}
 }
 

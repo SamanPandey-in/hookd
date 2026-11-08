@@ -32,7 +32,7 @@ func keyAuthRouter(a *API) http.Handler {
 			} else {
 				raw = strings.TrimSpace(r.Header.Get("X-API-Key"))
 			}
-			uid, err := a.ResolveAPIKey(r.Context(), raw)
+			uid, _, err := a.ResolveAPIKey(r.Context(), raw)
 			if err != nil || uid <= 0 {
 				httpx.Error(w, http.StatusUnauthorized, "authentication required")
 				return

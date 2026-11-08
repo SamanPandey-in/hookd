@@ -1,14 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"whook/internal/dodo"
+	"whook/internal/email"
 	"whook/internal/httpx"
 	"whook/internal/plan"
 	"whook/internal/store"
@@ -22,7 +25,8 @@ import (
 // with our OWN verify engine (verify.StandardWebhooks) — dogfooding the product.
 type Billing struct {
 	Store       store.Store
-	Dodo        dodo.Client // nil when DODO_API_KEY is unset (billing not configured)
+	Dodo        dodo.Client   // nil when DODO_API_KEY is unset (billing not configured)
+	Email       email.Sender  // transactional sender; inert (no-op) unless SMTP configured
 	MaxJSONBody int64
 
 	WebhookSecret  string // DODO_WEBHOOK_SECRET; "" => /webhooks/dodo returns 503
@@ -225,6 +229,10 @@ func (b *Billing) apply(r *http.Request, ev dodoWebhook) bool {
 	if sub.CurrentPeriodEnd == 0 {
 		sub.CurrentPeriodEnd = u.Subscription.CurrentPeriodEnd
 	}
+	// Capture the prior status BEFORE the update so we can detect a transition
+	// into a dunning (payment-failing) state.
+	prevStatus := u.Subscription.Status
+
 	newPlan := planForStatus(status)
 	if err := b.Store.UpdateUserSubscription(ctx(r), u.ID, newPlan, sub); err != nil {
 		return false
@@ -234,7 +242,64 @@ func (b *Billing) apply(r *http.Request, ev dodoWebhook) bool {
 		UserID: u.ID, Action: "plan.changed", Target: newPlan,
 		Metadata: map[string]string{"status": status, "event": ev.Type},
 	})
+
+	// Dunning notice: when the subscription TRANSITIONS into a payment-failing
+	// state, best-effort email the user to update their card. Only on the
+	// transition (not every webhook), never blocking the webhook response, and
+	// never fatal. Delivery is inert unless SMTP is configured (see internal/email).
+	b.maybeNotifyDunning(prevStatus, status, u)
 	return true
+}
+
+// dunningStatuses are the subscription states that mean a renewal charge is
+// failing and the user must update their payment method.
+func isDunning(status string) bool {
+	switch status {
+	case "past_due", "on_hold", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+// maybeNotifyDunning sends the "your payment is failing" email, but ONLY on the
+// transition INTO a dunning state (prev not dunning, new dunning) so a user is
+// not re-notified on every retry webhook. Dunning is transactional, so it is
+// always attempted when a sender is configured (the no-op sender makes it inert
+// without SMTP). The send runs in the background with its own context so it never
+// blocks or fails the webhook response; failures are logged, not fatal.
+func (b *Billing) maybeNotifyDunning(prevStatus, newStatus string, u *store.User) {
+	if b.Email == nil || u == nil {
+		return
+	}
+	if !isDunning(newStatus) || isDunning(prevStatus) {
+		return // not a fresh transition into dunning
+	}
+	to := strings.TrimSpace(u.BillingEmail)
+	if to == "" {
+		to = strings.TrimSpace(u.Email) // fall back to the login email
+	}
+	if to == "" {
+		return // nowhere to send
+	}
+	msg := email.Message{
+		To:      to,
+		Subject: "your hookd payment is failing — update your card",
+		Body: "hi,\n\n" +
+			"we couldn't process the latest charge for your hookd Pro subscription, " +
+			"so your account is now past due.\n\n" +
+			"please update your payment method to keep Pro features active:\n" +
+			"https://hookd.dev/app/settings/billing\n\n" +
+			"if the charge succeeds on a retry, you can ignore this message.\n\n" +
+			"— hookd\n",
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := b.Email.Send(ctx, msg); err != nil {
+			log.Printf("billing: dunning email send failed (non-fatal): %v", err)
+		}
+	}()
 }
 
 // findUser resolves the owning user from the Dodo customer id, falling back to

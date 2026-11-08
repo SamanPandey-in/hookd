@@ -84,8 +84,10 @@ func (h *Handler) Capture(w http.ResponseWriter, r *http.Request) {
 		ReceivedAtMS: time.Now().UnixMilli(),
 	}
 
-	// Verify the signature if we can (secret configured).
-	h.runVerify(r.Context(), ep, r.Header, body, ev)
+	// Verify the signature if we can (secret configured). The full external URL
+	// is reconstructed from the forwarded headers so URL-bound schemes (Twilio)
+	// verify against the exact URL the sender was pointed at.
+	h.runVerify(r.Context(), ep, r.Header, httpx.ExternalURL(r), body, ev)
 
 	if err := h.store.CreateEvent(r.Context(), ev); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "could not store event")
@@ -100,7 +102,8 @@ func (h *Handler) Capture(w http.ResponseWriter, r *http.Request) {
 }
 
 // runVerify fills the verify fields on ev using the endpoint's provider/secret.
-func (h *Handler) runVerify(ctx context.Context, ep *store.Endpoint, hdr http.Header, body []byte, ev *store.Event) {
+// url is the full external URL the request was received on (for URL-bound schemes).
+func (h *Handler) runVerify(ctx context.Context, ep *store.Endpoint, hdr http.Header, url string, body []byte, ev *store.Event) {
 	provider := verify.Provider(ep.Provider)
 	if provider == "" {
 		if detected, ok := verify.Detect(hdr); ok {
@@ -135,6 +138,7 @@ func (h *Handler) runVerify(ctx context.Context, ep *store.Endpoint, hdr http.He
 		Secret:   secret,
 		Headers:  hdr,
 		Body:     body,
+		URL:      url,
 	})
 	ev.VerifyStatus = string(res.Status)
 	ev.VerifyCause = string(res.Cause)

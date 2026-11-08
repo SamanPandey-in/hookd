@@ -33,6 +33,8 @@ const (
 	Shopify          Provider = "shopify"           // X-Shopify-Hmac-Sha256: HMAC-SHA256, base64
 	StandardWebhooks Provider = "standard_webhooks" // Svix/Dodo: webhook-id,-timestamp,-signature "v1,<b64>" over "id.ts.payload"
 	Slack            Provider = "slack"             // X-Slack-Signature: "v0=" HMAC-SHA256 over "v0:ts:body", hex; X-Slack-Request-Timestamp
+	Twilio           Provider = "twilio"            // X-Twilio-Signature: base64 HMAC-SHA1 over the request URL (+ sorted form params, or +bodySHA256 for JSON)
+	Vercel           Provider = "vercel"            // x-vercel-signature: HMAC-SHA1 over the raw body, hex (no prefix, no timestamp)
 )
 
 // Status is the top-level verification outcome.
@@ -68,6 +70,12 @@ type Input struct {
 	Body             []byte      // EXACT raw request body bytes
 	Now              time.Time   // injected for deterministic timestamp checks; zero => time.Now()
 	ToleranceSeconds int         // 0 => provider default (e.g. Stripe/Slack 300s)
+
+	// URL is the full external URL the request was made to
+	// (scheme+host+path+exact raw query). Only URL-bound schemes read it —
+	// Twilio signs the URL itself — so the other six verifiers ignore it and
+	// adding it is backward-compatible. Empty when unknown.
+	URL string
 }
 
 // now returns Input.Now or the wall clock if unset. Verifiers should use this.
@@ -170,6 +178,10 @@ func Detect(h http.Header) (Provider, bool) {
 		return Shopify, true
 	case h.Get("X-Slack-Signature") != "":
 		return Slack, true
+	case h.Get("X-Twilio-Signature") != "":
+		return Twilio, true
+	case h.Get("x-vercel-signature") != "":
+		return Vercel, true
 	case h.Get("Webhook-Signature") != "" && h.Get("Webhook-Id") != "" && h.Get("Webhook-Timestamp") != "":
 		return StandardWebhooks, true
 	}
@@ -189,6 +201,11 @@ type SignInput struct {
 	Secret   string    // signing secret to sign with
 	Body     []byte    // exact raw body bytes to sign
 	Now      time.Time // timestamp to embed (use a fresh time for re-sign); zero => time.Now()
+
+	// URL is the full target URL the re-signed request will be sent to. Only
+	// URL-bound schemes read it — Twilio signs this URL — so the other six
+	// signers ignore it. For a replay re-sign, pass the replay destination.
+	URL string
 }
 
 func (s SignInput) EffectiveNow() time.Time {
@@ -202,7 +219,16 @@ func (s SignInput) EffectiveNow() time.Time {
 // the receiver will verify it (e.g. {"Stripe-Signature": "t=...,v1=..."}).
 type SignResult struct {
 	Headers map[string]string
-	Err     error
+
+	// URL, when non-empty, is the request URL the signature in Headers was
+	// computed over and that the caller MUST send the request to. It differs
+	// from the URL passed in only when the scheme binds the signature to query
+	// parameters the signer appends — Twilio JSON mode appends a bodySHA256
+	// query param. All other signers leave it empty, and the caller keeps its
+	// own target URL.
+	URL string
+
+	Err error
 }
 
 // Signer produces signature headers for one provider's scheme.

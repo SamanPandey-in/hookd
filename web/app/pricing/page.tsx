@@ -18,7 +18,7 @@ export default function PricingPage() {
     <div className="flex min-h-screen flex-col">
       <MarketingNav />
 
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         <Section className="pt-14 pb-8 lg:pt-20">
           <SectionHeading
             title="priced like a tool, not a platform"

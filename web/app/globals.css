@@ -34,7 +34,10 @@
 
 /* Light tokens (DESIGN §2 light). Status colors are darkened only for AA
    contrast on white — same semantics, still one hue + the trio.
-   `hookd-light` is the picker id; `light` is kept as a back-compat alias. */
+   `hookd-light` is the picker id; `light` is kept as a back-compat alias AND is
+   the target the "system / follow-OS" choice resolves to when the OS prefers
+   light (next-themes writes data-theme="light"; the dark case falls through to
+   the :root default = hookd). See components/theme-provider.tsx. */
 :root[data-theme="light"],
 :root[data-theme="hookd-light"] {
   --bg: #f7f8f8; /* cool off-white — explicitly NOT cream #F4F1EA */

@@ -13,6 +13,7 @@ import (
 	"whook/internal/config"
 	"whook/internal/cryptox"
 	"whook/internal/dodo"
+	"whook/internal/email"
 	"whook/internal/httpx"
 	"whook/internal/ingest"
 	"whook/internal/replay"
@@ -59,9 +60,20 @@ func New(d Deps) http.Handler {
 	apiH.AuthSession = authH.RequireAuth
 	apiH.AuthSessionOrKey = authH.AuthSessionOrKey(apiH.ResolveAPIKey)
 
+	// Transactional email sender. Inert (no-op, "would send" log) unless SMTP is
+	// configured — drop-in: set SMTP_* + EMAIL_FROM to enable real delivery.
+	mailer := email.New(email.Config{
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUsername,
+		Password: cfg.SMTPPassword,
+		From:     cfg.EmailFrom,
+	})
+
 	billingH := &api.Billing{
 		Store:          d.Store,
 		Dodo:           d.Dodo,
+		Email:          mailer,
 		MaxJSONBody:    1 << 20,
 		WebhookSecret:  cfg.DodoWebhookSecret,
 		ProductMonthly: cfg.DodoProductMonthly,

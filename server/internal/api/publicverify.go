@@ -42,6 +42,9 @@ type debugVerifyReq struct {
 	Secret   string            `json:"secret"`
 	Headers  map[string]string `json:"headers"`
 	Body     string            `json:"body"`
+	// URL is the full external URL the request was made to. Optional and ignored
+	// by every scheme except Twilio, whose signature is bound to the URL.
+	URL string `json:"url"`
 }
 
 // debugVerifyResp is the full, explainable result returned to the caller. It is
@@ -125,6 +128,7 @@ func (p *PublicVerify) Verify(w http.ResponseWriter, r *http.Request) {
 		Secret:   req.Secret,
 		Headers:  hdr,
 		Body:     []byte(req.Body),
+		URL:      req.URL,
 	})
 
 	httpx.JSON(w, http.StatusOK, debugVerifyResp{

@@ -122,7 +122,13 @@ export function DetailPane({
           <TabBar tab={tab} onTabChange={onTabChange} attemptCount={attempts.length} />
         </div>
 
-        <div className="px-2 pb-6 pt-1 sm:px-4">
+        <div
+          role="tabpanel"
+          id={`detail-panel-${tab}`}
+          aria-labelledby={`detail-tab-${tab}`}
+          tabIndex={0}
+          className="px-2 pb-6 pt-1 sm:px-4 focus-visible:outline-2"
+        >
           {tab === "headers" && (
             <div className="overflow-hidden rounded-md border border-border">
               <HeadersTable headers={detail.headers} />
@@ -245,7 +251,11 @@ function DetailHeader({
       </div>
 
       {shared && (
-        <p className="mt-2 break-all font-mono text-[11px] text-muted">
+        <p
+          role="status"
+          aria-live="polite"
+          className="mt-2 break-all font-mono text-[11px] text-muted"
+        >
           read-only link copied: <span className="text-text">{shared}</span>
         </p>
       )}
@@ -256,7 +266,11 @@ function DetailHeader({
         />
       )}
       {shareErr && (
-        <p className="mt-2 font-mono text-[11px]" style={{ color: "var(--fail)" }}>
+        <p
+          role="alert"
+          className="mt-2 font-mono text-[11px]"
+          style={{ color: "var(--fail)" }}
+        >
           could not create a share link — try again
         </p>
       )}
@@ -273,16 +287,44 @@ function TabBar({
   onTabChange: (t: DetailTab) => void;
   attemptCount: number;
 }) {
+  // Roving tabindex: only the active tab is in the tab order; arrows move
+  // focus+selection across the strip (WAI-ARIA tabs pattern).
+  const tabRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
+  const onTabKeyDown = (e: React.KeyboardEvent, idx: number) => {
+    let next = idx;
+    if (e.key === "ArrowRight") next = (idx + 1) % DETAIL_TABS.length;
+    else if (e.key === "ArrowLeft")
+      next = (idx - 1 + DETAIL_TABS.length) % DETAIL_TABS.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = DETAIL_TABS.length - 1;
+    else return;
+    e.preventDefault();
+    const t = DETAIL_TABS[next];
+    onTabChange(t.id);
+    tabRefs.current[t.id]?.focus();
+  };
+
   return (
-    <div role="tablist" className="flex items-center gap-1 border-b border-border">
+    <div
+      role="tablist"
+      aria-label="event detail"
+      className="flex items-center gap-1 border-b border-border"
+    >
       {DETAIL_TABS.map((t, i) => {
         const active = t.id === tab;
         return (
           <button
             key={t.id}
+            ref={(el) => {
+              tabRefs.current[t.id] = el;
+            }}
+            id={`detail-tab-${t.id}`}
             role="tab"
             type="button"
             aria-selected={active}
+            aria-controls={`detail-panel-${t.id}`}
+            tabIndex={active ? 0 : -1}
+            onKeyDown={(e) => onTabKeyDown(e, i)}
             onClick={() => onTabChange(t.id)}
             // Instant swap, no slide (DESIGN §7): plain conditional content.
             className={cn(

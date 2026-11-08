@@ -14,6 +14,7 @@ import (
 	"golang.org/x/oauth2/github"
 
 	"whook/internal/httpx"
+	"whook/internal/plan"
 	"whook/internal/store"
 )
 
@@ -175,9 +176,10 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	// Persist display profile captured from GitHub (best-effort: never block login).
 	_ = h.store.UpdateUserProfile(r.Context(), u.ID, ghUser.AvatarURL, ghUser.Name)
-	// Record the login in the activity log (best-effort).
+	// Record the login in the activity log (best-effort), capturing IP + device.
 	_ = h.store.InsertActivity(r.Context(), &store.Activity{
 		UserID: u.ID, Action: "login", Target: u.Login,
+		IP: httpx.ClientIP(r), UserAgent: r.UserAgent(),
 	})
 	h.sessions.SetCookie(w, u.ID)
 	redirect := h.appURL
@@ -203,10 +205,7 @@ func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
-	userPlan := u.Plan
-	if userPlan == "" {
-		userPlan = "free"
-	}
+	userPlan := plan.Normalize(u.Plan)
 	var subscription any // null unless there is a live subscription
 	if u.Subscription.Status != "" {
 		subscription = map[string]any{
@@ -219,7 +218,20 @@ func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 		"id": u.ID, "login": u.Login, "email": u.Email,
 		"avatar_url": u.AvatarURL, "name": u.Name,
 		"created_at_ms": u.CreatedAt.UnixMilli(),
-		"plan":          userPlan, "subscription": subscription,
+		// theme is the account-synced appearance preference; "" means the client
+		// uses its own default/system choice (see PUT /api/account/theme).
+		"theme":        u.Theme,
+		"plan":         userPlan, "subscription": subscription,
+		// The gating matrix the client renders walls off. Server-authoritative
+		// (plan.go is the single source of truth); the UI never hardcodes caps,
+		// so free's endpoint cap and retention ceiling can't drift from what the
+		// API actually enforces.
+		"limits": map[string]any{
+			"max_endpoints":      plan.MaxEndpoints(userPlan),
+			"max_retention_days": plan.MaxRetentionDays(userPlan),
+			"pro_max_endpoints":  plan.ProMaxEndpoints,
+			"pro_retention_days": plan.ProRetentionDays,
+		},
 	})
 }
 
@@ -232,13 +244,16 @@ func (h *Handlers) RequireAuth(next http.Handler) http.Handler {
 			httpx.Error(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(httpx.WithUserID(r.Context(), uid)))
+		ctx := httpx.WithRequestMeta(httpx.WithUserID(r.Context(), uid), httpx.ClientIP(r), r.UserAgent())
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// APIKeyResolver resolves a raw API key (e.g. "whk_…") to the owning user id.
-// It returns an error when the key is absent, malformed, or unknown.
-type APIKeyResolver func(ctx context.Context, rawKey string) (userID int64, err error)
+// APIKeyResolver resolves a raw API key (e.g. "whk_…") to the owning user id and
+// the key's authorization scopes. It returns an error when the key is absent,
+// malformed, unknown, or expired. An empty scope set means full access (both
+// read and write) — the behavior of every key issued before scopes existed.
+type APIKeyResolver func(ctx context.Context, rawKey string) (userID int64, scopes []string, err error)
 
 // AuthSessionOrKey is middleware for programmatic routes: it accepts a valid
 // session cookie OR, as an alternative, a whk_ API key presented via
@@ -248,13 +263,21 @@ type APIKeyResolver func(ctx context.Context, rawKey string) (userID int64, err 
 func (h *Handlers) AuthSessionOrKey(resolve APIKeyResolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			meta := func(ctx context.Context, uid int64) context.Context {
+				return httpx.WithRequestMeta(httpx.WithUserID(ctx, uid), httpx.ClientIP(r), r.UserAgent())
+			}
 			if uid, err := h.sessions.FromRequest(r); err == nil {
-				next.ServeHTTP(w, r.WithContext(httpx.WithUserID(r.Context(), uid)))
+				next.ServeHTTP(w, r.WithContext(meta(r.Context(), uid)))
 				return
 			}
 			if raw := apiKeyFromRequest(r); raw != "" && resolve != nil {
-				if uid, err := resolve(r.Context(), raw); err == nil && uid > 0 {
-					next.ServeHTTP(w, r.WithContext(httpx.WithUserID(r.Context(), uid)))
+				// Stash client IP first so the resolver can record last-used IP.
+				reqCtx := httpx.WithRequestMeta(r.Context(), httpx.ClientIP(r), r.UserAgent())
+				if uid, scopes, err := resolve(reqCtx, raw); err == nil && uid > 0 {
+					// Carry the key's scopes so per-route enforcement can 403 a
+					// narrowed key. Empty scopes => full access (ScopeAllowed).
+					authed := httpx.WithScopes(meta(reqCtx, uid), scopes)
+					next.ServeHTTP(w, r.WithContext(authed))
 					return
 				}
 			}

@@ -61,16 +61,18 @@ export function PricingPlans({ className }: { className?: string }) {
   const router = useRouter();
   const [cycle, setCycle] = React.useState<Cycle>("annual");
   const [checkoutBusy, setCheckoutBusy] = React.useState(false);
+  const [checkoutError, setCheckoutError] = React.useState<string | null>(null);
   const annual = cycle === "annual";
   const proPrice = PRO_PRICE[cycle];
 
   // The Pro CTA is the money path: a logged-in free user goes straight to Dodo
-  // checkout; a logged-out visitor logs in first (returning to /account); a Pro
-  // user manages their plan. Any failure (incl. billing not configured) falls
-  // back to /account, which explains the state calmly rather than crashing.
+  // checkout; a logged-out visitor logs in first; a Pro user manages their plan.
+  // If checkout itself fails, we must NOT bounce silently — a stranded payment
+  // needs a visible reason and a way to reach a human (P1-6).
   const startPro = async () => {
     if (checkoutBusy) return;
     setCheckoutBusy(true);
+    setCheckoutError(null);
     try {
       const me = await auth.me().catch(() => null);
       if (!me) {
@@ -88,7 +90,11 @@ export function PricingPlans({ className }: { className?: string }) {
       // External, hosted Dodo page — a full-document navigation, not SPA.
       window.location.href = checkout_url;
     } catch {
-      router.push("/settings/billing");
+      // Surface the failure in place and re-enable the button so they can retry.
+      setCheckoutError(
+        "we couldn't start checkout just now. please try again in a moment.",
+      );
+      setCheckoutBusy(false);
     }
   };
 
@@ -188,6 +194,30 @@ export function PricingPlans({ className }: { className?: string }) {
           >
             {checkoutBusy ? "starting checkout" : "upgrade to pro"}
           </Button>
+          {checkoutError && (
+            <div
+              role="alert"
+              className="flex flex-col gap-1 rounded-sm border px-3 py-2.5"
+              style={{
+                borderColor: "color-mix(in oklab, var(--fail) 40%, var(--border))",
+                background: "color-mix(in oklab, var(--fail) 8%, transparent)",
+              }}
+            >
+              <p className="font-mono text-[11px] leading-relaxed text-text">
+                {checkoutError}
+              </p>
+              <p className="font-mono text-[11px] text-muted">
+                still stuck?{" "}
+                <Link
+                  href="/support"
+                  className="rounded-sm text-text underline decoration-border underline-offset-2 hover:decoration-text focus-visible:outline-2"
+                >
+                  contact support
+                </Link>
+                .
+              </p>
+            </div>
+          )}
           <div className="flex flex-col gap-3">
             <p className="font-mono text-[11px] text-muted">
               everything in free, plus

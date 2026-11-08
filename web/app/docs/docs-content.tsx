@@ -21,7 +21,7 @@ const curlApi = `curl ${API_URL}/api/endpoints \\
 const curlEvents = `curl ${API_URL}/api/endpoints/${EXAMPLE_ID}/events \\
   -H "Authorization: Bearer whk_your_key_here"`;
 
-export default function DocsPage() {
+export function DocsContent() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -158,7 +158,9 @@ GitHub-OAuth cookie instead; agents should use an API key.)
 
 ## core concepts
 - endpoint: a stable destination with its own ingest url. Optional provider
-  (stripe | github | razorpay | shopify | svix | slack | "" = auto-detect) and
+  (stripe | github | razorpay | shopify | standard_webhooks | slack | twilio | vercel | "" = auto-detect;
+  standard_webhooks is the Svix/Dodo spec; twilio's signature is bound to the
+  request URL, not just the body) and
   an optional signing secret.
 - ingest url: ${apiBase}/i/{endpoint_id} — point a provider (or your own POST)
   at it; every request is captured verbatim as an event.
@@ -182,7 +184,8 @@ gives — no account, no storage. Request JSON:
   { "provider": "stripe",        // optional; omit to auto-detect from headers
     "secret":   "whsec_...",
     "headers":  { "Stripe-Signature": "t=...,v1=..." },
-    "body":     "<raw request body as a string>" }
+    "body":     "<raw request body as a string>",
+    "url":      "<full request url>" }   // optional; only Twilio (url-bound) uses it
 Response: { provider, status (pass|fail|unknown), cause, summary, details }.
 Rate-limited per IP; stores nothing; logs no secret or body. Great as a quick
 one-shot check or to share "here's why your webhook won't verify".

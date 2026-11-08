@@ -17,7 +17,7 @@ const ITEMS: QA[] = [
   },
   {
     q: "which providers can you verify?",
-    a: "stripe, github, razorpay, shopify, standard webhooks (svix / dodo) and slack — each with its correct scheme, encoding and timestamp tolerance. more by request after launch.",
+    a: "stripe, github, razorpay, shopify, standard webhooks (svix / dodo), slack, twilio and vercel — each with its correct scheme, encoding and (where it applies) timestamp tolerance. twilio is the url-bound one: its signature covers the exact url it called, not just the body. more by request after launch.",
   },
   {
     q: "my webhooks carry payment data. is it private?",

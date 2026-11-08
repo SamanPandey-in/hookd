@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { auth, githubLoginURL, isUnauthorized } from "@/lib/api";
 import { LogoMark } from "@/components/ui/logo-mark";
@@ -60,7 +61,13 @@ export default function LoginPage() {
 
       <div className="flex w-full max-w-sm flex-col gap-8">
         <div className="flex flex-col gap-3">
-          <LogoMark />
+          <Link
+            href="/"
+            aria-label="hookd — home"
+            className="w-fit rounded-sm focus-visible:outline-2"
+          >
+            <LogoMark />
+          </Link>
           <h1 className="font-sans text-2xl font-semibold leading-tight tracking-tight text-text">
             see every webhook.
             <br />
@@ -93,6 +100,23 @@ export default function LoginPage() {
           </Button>
           <p className="text-center font-mono text-[11px] text-muted">
             no card. point a webhook and watch.
+          </p>
+          <p className="text-center text-[11px] leading-relaxed text-muted">
+            by continuing you agree to the{" "}
+            <Link
+              href="/terms"
+              className="rounded-sm text-text underline decoration-border underline-offset-2 hover:decoration-text focus-visible:outline-2"
+            >
+              terms
+            </Link>{" "}
+            and{" "}
+            <Link
+              href="/privacy"
+              className="rounded-sm text-text underline decoration-border underline-offset-2 hover:decoration-text focus-visible:outline-2"
+            >
+              privacy policy
+            </Link>
+            .
           </p>
         </div>
       </div>

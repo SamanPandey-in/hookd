@@ -82,4 +82,29 @@ var table = map[verify.Provider]Sample{
 			`"event":{"type":"app_mention","user":"U0001","text":"<@U0BOT> ship it","ts":"1700000000.000100",` +
 			`"channel":"C0001"},"type":"event_callback","event_id":"Ev0001","event_time":1700000000}`),
 	},
+	verify.Vercel: {
+		ContentType: "application/json",
+		Headers: map[string]string{
+			"x-vercel-deployment-url": "demo-ship-1a2b3c.vercel.app",
+			"x-vercel-id":             "iad1::sample-0001",
+		},
+		Body: []byte(`{"id":"evt_vercel_sample0001","type":"deployment.succeeded","createdAt":1700000000,` +
+			`"region":"iad1","payload":{"team":{"id":"team_sample"},"user":{"id":"user_sample"},` +
+			`"deployment":{"id":"dpl_sample0001","name":"demo-ship","url":"demo-ship-1a2b3c.vercel.app",` +
+			`"meta":{"githubCommitRef":"main","githubCommitSha":"a1b2c3d4"}},` +
+			`"project":{"id":"prj_sample0001"},"target":"production"}}`),
+	},
+	// Twilio messaging webhook: form-encoded (Content-Type
+	// application/x-www-form-urlencoded), the realistic shape of an inbound SMS.
+	// The "+" in phone numbers is percent-encoded on the wire, exactly as Twilio
+	// posts it; the signature is URL-bound and added at send time via Sign.
+	verify.Twilio: {
+		ContentType: "application/x-www-form-urlencoded",
+		Headers:     map[string]string{"I-Twilio-Idempotency-Token": "sample-idem-0001"},
+		Body: []byte(`MessageSid=SM0a1b2c3d4e5f60718293a4b5c6d7e8f90` +
+			`&AccountSid=ACcafebabecafebabecafebabecafebabe` +
+			`&MessagingServiceSid=MG9876543210fedcba9876543210fedcb0` +
+			`&From=%2B14155550123&To=%2B18005551212&Body=your+hookd+code+is+2468` +
+			`&NumMedia=0&NumSegments=1&SmsStatus=received&ApiVersion=2010-04-01`),
+	},
 }

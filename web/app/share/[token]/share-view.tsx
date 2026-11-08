@@ -45,7 +45,9 @@ export function ShareView({ token }: { token: string }) {
       <header className="flex items-center justify-between gap-3 border-b border-border pb-4">
         <div className="flex items-center gap-2.5">
           <LogoMark />
-          <span className="font-mono text-xs text-muted">shared event · read-only</span>
+          <h1 className="font-mono text-xs text-muted">
+            shared webhook event · read-only
+          </h1>
         </div>
         <ThemeToggle />
       </header>

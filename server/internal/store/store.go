@@ -15,6 +15,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -35,13 +36,32 @@ type User struct {
 	Plan           string
 	DodoCustomerID string
 	Subscription   Subscription
+
+	// Theme is the account-synced appearance preference (migration 0007). Empty
+	// means "no account preference set"; the client then uses its own default.
+	Theme string
+
+	// Notification preferences + billing email (migration 0008). These are
+	// PREFERENCE STORAGE ONLY — no mail provider is wired, so nothing is sent.
+	BillingEmail        string
+	NotifyProduct       bool
+	NotifyCaptureAlerts bool
+}
+
+// NotificationPrefs is the user-editable notification preference set stored on
+// the user row. Delivery is deferred (no outbound-email provider in this
+// build); the server only records intent.
+type NotificationPrefs struct {
+	BillingEmail        string `json:"billing_email"`
+	NotifyProduct       bool   `json:"notify_product"`
+	NotifyCaptureAlerts bool   `json:"notify_capture_alerts"`
 }
 
 // Subscription is a user's Dodo subscription state. The zero value (Status "")
 // means the user has never subscribed; a free user has no live subscription.
 type Subscription struct {
 	ID                string `json:"-"`
-	Status            string `json:"status"`             // active|on_hold|cancelled|expired|failed|...
+	Status            string `json:"status"`             // active|on_hold|past_due|cancelled|expired|failed|...
 	CurrentPeriodEnd  int64  `json:"current_period_end"` // unix ms (Dodo next_billing_date)
 	CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
 }
@@ -142,6 +162,76 @@ type APIKey struct {
 	Prefix       string `json:"prefix"`
 	CreatedAtMS  int64  `json:"created_at_ms"`
 	LastUsedAtMS *int64 `json:"last_used_at_ms"`
+	// ExpiresAtMS is an optional expiry (unix ms); nil means the key never
+	// expires. The auth middleware rejects a key once now >= ExpiresAtMS.
+	ExpiresAtMS *int64 `json:"expires_at_ms"`
+	// LastUsedIP is the best-effort client IP of the most recent authenticated
+	// use (never a secret value); "" until first use.
+	LastUsedIP string `json:"last_used_ip"`
+	// Scopes narrows what the key may do (migration 0011). The minimal model is
+	// ScopeRead (safe GETs) and ScopeWrite (anything that mutates). BACKWARD
+	// COMPATIBILITY: an EMPTY slice means FULL access (both read and write) — this
+	// is how every key issued before scopes existed behaves. A new key defaults to
+	// both unless the caller narrows it. Never a secret value.
+	Scopes []string `json:"scopes"`
+}
+
+// API-key scopes (migration 0011). The model is deliberately minimal:
+//   - ScopeRead  — safe, read-only GETs (list/read endpoints, events, replays,
+//     stream, me).
+//   - ScopeWrite — anything that mutates (create/patch/delete endpoint, set/clear
+//     secret, replay, send sample, set response rule, share).
+//
+// An EMPTY scope set is treated as FULL access (both) everywhere, so keys that
+// predate scopes keep working unchanged.
+const (
+	ScopeRead  = "read"
+	ScopeWrite = "write"
+)
+
+// FullScopes returns the default scope set granted to a new key when the caller
+// does not narrow it: both read and write.
+func FullScopes() []string { return []string{ScopeRead, ScopeWrite} }
+
+// NormalizeScopes validates, lower-cases and de-duplicates a requested scope set
+// against the known scopes, preserving a stable read-before-write order. Unknown
+// entries are dropped. A nil/empty input returns nil (which callers treat as
+// "full access"). ok is false only when the input was non-empty but contained no
+// recognized scope (so callers can reject obvious garbage with a 400).
+func NormalizeScopes(in []string) (out []string, ok bool) {
+	if len(in) == 0 {
+		return nil, true
+	}
+	var read, write bool
+	for _, s := range in {
+		switch strings.ToLower(strings.TrimSpace(s)) {
+		case ScopeRead:
+			read = true
+		case ScopeWrite:
+			write = true
+		}
+	}
+	if read {
+		out = append(out, ScopeRead)
+	}
+	if write {
+		out = append(out, ScopeWrite)
+	}
+	return out, len(out) > 0
+}
+
+// ScopesAllow reports whether a key carrying scopes may perform an action that
+// requires want. An empty scope set is full access (both), so it always allows.
+func ScopesAllow(scopes []string, want string) bool {
+	if len(scopes) == 0 {
+		return true
+	}
+	for _, s := range scopes {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // Activity is one entry in a user's audit log. Action is a short machine string
@@ -154,6 +244,10 @@ type Activity struct {
 	Target      string            `json:"target"`
 	Metadata    map[string]string `json:"metadata"`
 	CreatedAtMS int64             `json:"created_at_ms"`
+	// IP + UserAgent are captured best-effort on login and sensitive actions
+	// (migration 0010); "" when not captured. Neither is a secret value.
+	IP        string `json:"ip"`
+	UserAgent string `json:"user_agent"`
 }
 
 // EventFilter constrains an events listing. Zero values mean "no filter".
@@ -175,6 +269,10 @@ type Store interface {
 	GetUser(ctx context.Context, id int64) (*User, error)
 	// UpdateUserProfile persists display profile fields captured at login.
 	UpdateUserProfile(ctx context.Context, userID int64, avatarURL, name string) error
+	// UpdateUserTheme persists the account-synced appearance theme.
+	UpdateUserTheme(ctx context.Context, userID int64, theme string) error
+	// UpdateNotificationPrefs persists notification preferences + billing email.
+	UpdateNotificationPrefs(ctx context.Context, userID int64, prefs NotificationPrefs) error
 	// DeleteAccount removes the user and cascades all their data (endpoints,
 	// events, replay attempts, api keys, activity) within a transaction.
 	DeleteAccount(ctx context.Context, userID int64) error
@@ -222,14 +320,19 @@ type Store interface {
 	CreateAPIKey(ctx context.Context, k *APIKey) error
 	ListAPIKeys(ctx context.Context, userID int64) ([]*APIKey, error)
 	DeleteAPIKey(ctx context.Context, id string, userID int64) error
+	// RotateAPIKey replaces a key's secret (hash + display prefix) in place,
+	// keeping its id/name/expiry and resetting last-used, scoped to the owner.
+	RotateAPIKey(ctx context.Context, id string, userID int64, newHash, newPrefix string) error
 	// LookupAPIKeyByHash resolves a key by its hex SHA-256 hash (for auth).
 	LookupAPIKeyByHash(ctx context.Context, keyHash string) (*APIKey, error)
-	// TouchAPIKey records the last-used timestamp (unix ms) for a key.
-	TouchAPIKey(ctx context.Context, id string, atMS int64) error
+	// TouchAPIKey records the last-used timestamp (unix ms) and client IP for a key.
+	TouchAPIKey(ctx context.Context, id string, atMS int64, ip string) error
 
 	// Activity log.
 	InsertActivity(ctx context.Context, a *Activity) error
-	ListActivity(ctx context.Context, userID int64, limit int) ([]*Activity, error)
+	// ListActivity returns the caller's audit log newest-first. beforeMS > 0 is a
+	// pagination cursor (only rows with created_at_ms < beforeMS).
+	ListActivity(ctx context.Context, userID int64, limit int, beforeMS int64) ([]*Activity, error)
 
 	// Close releases resources.
 	Close()

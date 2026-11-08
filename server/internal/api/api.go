@@ -42,12 +42,39 @@ func orPass(mw func(http.Handler) http.Handler) func(http.Handler) http.Handler 
 	return mw
 }
 
+// enforceScope is per-route authorization for API-key auth. The scope model is
+// method-based and needs no per-route table: a safe method (GET/HEAD) requires
+// ScopeRead, any mutating method requires ScopeWrite. Session (cookie) auth and
+// pre-scopes keys carry no scopes on the context, which ScopeAllowed treats as
+// FULL access — so this only ever restricts a deliberately narrowed API key. A
+// read-only key hitting a write route gets a 403 (JSON {"error":...}), not a 401.
+// It runs AFTER auth (which stashes the scopes), so it wraps the inner handler.
+func (a *API) enforceScope(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		want := store.ScopeWrite
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			want = store.ScopeRead
+		}
+		if !httpx.ScopeAllowed(r.Context(), want) {
+			httpx.Error(w, http.StatusForbidden, "this api key lacks the \""+want+"\" scope for this request")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Mount registers the authed API routes on r (the /api subrouter). Each route
 // declares its own auth: session-only for browser/management routes, or
-// session-or-API-key for the four programmatic read/write routes.
+// session-or-API-key for the programmatic read/write routes.
 func (a *API) Mount(r chi.Router) {
 	sess := orPass(a.AuthSession)
-	key := orPass(a.AuthSessionOrKey)
+	// key = session-or-API-key auth, THEN method-based scope enforcement. Auth is
+	// outermost so it populates the scopes the enforcement step reads.
+	authKey := orPass(a.AuthSessionOrKey)
+	key := func(next http.Handler) http.Handler {
+		return authKey(a.enforceScope(next))
+	}
 
 	r.Route("/endpoints", func(r chi.Router) {
 		r.With(key).Get("/", a.ListEndpoints)   // programmatic
@@ -74,11 +101,16 @@ func (a *API) Mount(r chi.Router) {
 
 	// Account management (session only).
 	r.With(sess).Delete("/account", a.DeleteAccount)
+	r.With(sess).Get("/account/export", a.ExportData)
+	r.With(sess).Put("/account/theme", a.SetTheme)
+	r.With(sess).Get("/account/notifications", a.GetNotifications)
+	r.With(sess).Put("/account/notifications", a.SetNotifications)
 	r.With(sess).Get("/activity", a.ListActivity)
 	r.Route("/keys", func(r chi.Router) {
 		r.With(sess).Get("/", a.ListKeys)
 		r.With(sess).Post("/", a.CreateKey)
 		r.With(sess).Delete("/{id}", a.DeleteKey)
+		r.With(sess).Post("/{id}/rotate", a.RotateKey)
 	})
 }
 

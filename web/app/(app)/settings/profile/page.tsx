@@ -2,13 +2,15 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ApiError } from "@/lib/api";
+import { TriangleAlert } from "lucide-react";
+import { account, ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
+import { isLapsed } from "@/lib/billing";
 import { asProfile, deleteAccount } from "@/lib/profile";
 import { useMe } from "../../layout";
 import { Panel, FieldLabel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
-import { PlanBadge } from "@/components/ui/upgrade";
+import { PlanBadge, UpgradeLink } from "@/components/ui/upgrade";
 import { ErrorBanner } from "@/components/ui/states";
 
 // Settings → Profile (DESIGN §5.3). Identity comes from the shell's /api/me via
@@ -39,6 +41,10 @@ export default function ProfilePage() {
   const p = asProfile(me);
   const isPro = p.plan === "pro";
   const displayName = p.name?.trim() || p.login;
+  // Active billing = Pro, or a subscription that hasn't lapsed. Deletion while
+  // this is true should warn the user to sort billing first (P1-17).
+  const hasActiveBilling =
+    isPro || (!!p.subscription && !isLapsed(p.subscription.status));
 
   return (
     <div className="flex w-full max-w-2xl flex-col gap-6">
@@ -91,8 +97,39 @@ export default function ProfilePage() {
         </dl>
       </Panel>
 
-      <DangerZone login={p.login} />
+      <PrivacyData />
+
+      <DangerZone login={p.login} hasActiveBilling={hasActiveBilling} />
     </div>
+  );
+}
+
+/** Privacy & data (GDPR). "export my data" navigates to the authenticated
+ *  export URL, which the server returns as a `hookd-export.json` attachment —
+ *  a plain navigation triggers the download (not a fetch). */
+function PrivacyData() {
+  return (
+    <Panel className="flex flex-col gap-4 p-4">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="font-sans text-sm font-semibold text-text">
+          privacy &amp; data
+        </h2>
+        <p className="text-xs leading-relaxed text-muted">
+          download everything we hold for your account — your profile,
+          endpoints, captured events and replays — as a single json file.
+        </p>
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        className="w-fit"
+        onClick={() => {
+          window.location.href = account.exportURL();
+        }}
+      >
+        export my data
+      </Button>
+    </Panel>
   );
 }
 
@@ -136,7 +173,13 @@ function Avatar({
   );
 }
 
-function DangerZone({ login }: { login: string }) {
+function DangerZone({
+  login,
+  hasActiveBilling,
+}: {
+  login: string;
+  hasActiveBilling: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [typed, setTyped] = React.useState("");
@@ -181,6 +224,30 @@ function DangerZone({ login }: { login: string }) {
           be undone.
         </p>
       </div>
+
+      {hasActiveBilling && (
+        <div
+          role="note"
+          className="flex items-start gap-2.5 rounded-sm px-3 py-2"
+          style={{
+            borderColor: "color-mix(in oklab, var(--warn) 45%, var(--border))",
+            background: "color-mix(in oklab, var(--warn) 8%, transparent)",
+            borderWidth: 1,
+          }}
+        >
+          <TriangleAlert
+            className="mt-0.5 h-3.5 w-3.5 shrink-0"
+            style={{ color: "var(--warn)" }}
+            aria-hidden
+          />
+          <p className="min-w-0 flex-1 font-mono text-[11px] leading-relaxed text-text">
+            you have an active pro subscription. cancel billing first so you
+            aren&rsquo;t charged again — deleting your account here does not
+            guarantee the subscription is stopped.{" "}
+            <UpgradeLink href="/settings/billing">manage billing</UpgradeLink>
+          </p>
+        </div>
+      )}
 
       {!open ? (
         <Button

@@ -54,7 +54,8 @@ func (f *Fake) UpsertUserByGitHub(_ context.Context, githubID int64, login, emai
 		return cloneUser(u), nil
 	}
 	f.nextUserID++
-	u := &User{ID: f.nextUserID, GitHubID: githubID, Login: login, Email: email, CreatedAt: time.Now(), Plan: "free"}
+	// NotifyProduct defaults TRUE to mirror the Postgres column default (0008).
+	u := &User{ID: f.nextUserID, GitHubID: githubID, Login: login, Email: email, CreatedAt: time.Now(), Plan: "free", NotifyProduct: true}
 	f.users[u.ID] = u
 	f.ghIndex[githubID] = u.ID
 	return cloneUser(u), nil
@@ -79,6 +80,30 @@ func (f *Fake) UpdateUserProfile(_ context.Context, userID int64, avatarURL, nam
 	}
 	u.AvatarURL = avatarURL
 	u.Name = name
+	return nil
+}
+
+func (f *Fake) UpdateUserTheme(_ context.Context, userID int64, theme string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, ok := f.users[userID]
+	if !ok {
+		return ErrNotFound
+	}
+	u.Theme = theme
+	return nil
+}
+
+func (f *Fake) UpdateNotificationPrefs(_ context.Context, userID int64, prefs NotificationPrefs) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, ok := f.users[userID]
+	if !ok {
+		return ErrNotFound
+	}
+	u.BillingEmail = prefs.BillingEmail
+	u.NotifyProduct = prefs.NotifyProduct
+	u.NotifyCaptureAlerts = prefs.NotifyCaptureAlerts
 	return nil
 }
 
@@ -440,6 +465,21 @@ func (f *Fake) DeleteAPIKey(_ context.Context, id string, userID int64) error {
 	return nil
 }
 
+func (f *Fake) RotateAPIKey(_ context.Context, id string, userID int64, newHash, newPrefix string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	k, ok := f.apiKeys[id]
+	if !ok || k.UserID != userID {
+		return ErrNotFound
+	}
+	// New secret: swap hash/prefix, reset last-used. id/name/expiry are kept.
+	k.KeyHash = newHash
+	k.Prefix = newPrefix
+	k.LastUsedAtMS = nil
+	k.LastUsedIP = ""
+	return nil
+}
+
 func (f *Fake) LookupAPIKeyByHash(_ context.Context, keyHash string) (*APIKey, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -455,7 +495,7 @@ func (f *Fake) LookupAPIKeyByHash(_ context.Context, keyHash string) (*APIKey, e
 	return nil, ErrNotFound
 }
 
-func (f *Fake) TouchAPIKey(_ context.Context, id string, atMS int64) error {
+func (f *Fake) TouchAPIKey(_ context.Context, id string, atMS int64, ip string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	k, ok := f.apiKeys[id]
@@ -464,6 +504,9 @@ func (f *Fake) TouchAPIKey(_ context.Context, id string, atMS int64) error {
 	}
 	v := atMS
 	k.LastUsedAtMS = &v
+	if ip != "" {
+		k.LastUsedIP = ip
+	}
 	return nil
 }
 
@@ -479,7 +522,7 @@ func (f *Fake) InsertActivity(_ context.Context, a *Activity) error {
 	return nil
 }
 
-func (f *Fake) ListActivity(_ context.Context, userID int64, limit int) ([]*Activity, error) {
+func (f *Fake) ListActivity(_ context.Context, userID int64, limit int, beforeMS int64) ([]*Activity, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if limit <= 0 || limit > 500 {
@@ -488,6 +531,9 @@ func (f *Fake) ListActivity(_ context.Context, userID int64, limit int) ([]*Acti
 	src := f.activity[userID]
 	out := make([]*Activity, 0, len(src))
 	for i := len(src) - 1; i >= 0; i-- { // newest first
+		if beforeMS > 0 && src[i].CreatedAtMS >= beforeMS {
+			continue
+		}
 		out = append(out, cloneActivity(src[i]))
 	}
 	if len(out) > limit {
@@ -525,6 +571,13 @@ func cloneAPIKey(k *APIKey) *APIKey {
 	if k.LastUsedAtMS != nil {
 		v := *k.LastUsedAtMS
 		c.LastUsedAtMS = &v
+	}
+	if k.ExpiresAtMS != nil {
+		v := *k.ExpiresAtMS
+		c.ExpiresAtMS = &v
+	}
+	if k.Scopes != nil {
+		c.Scopes = append([]string(nil), k.Scopes...)
 	}
 	return &c
 }

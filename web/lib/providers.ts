@@ -15,6 +15,8 @@ export const PROVIDER_META: Record<
     signatureHeader: "Webhook-Signature",
   },
   slack: { label: "Slack", signatureHeader: "X-Slack-Signature" },
+  twilio: { label: "Twilio", signatureHeader: "X-Twilio-Signature" },
+  vercel: { label: "Vercel", signatureHeader: "x-vercel-signature" },
 };
 
 export function providerLabel(p: Provider | "" | undefined): string {
@@ -36,6 +38,8 @@ export const SIGNATURE_HEADERS = new Set(
     "webhook-timestamp",
     "x-slack-signature",
     "x-slack-request-timestamp",
+    "x-twilio-signature",
+    "x-vercel-signature",
   ].map((s) => s.toLowerCase()),
 );
 
@@ -72,6 +76,8 @@ const PROVIDER_ENCODING: Partial<Record<Provider, "hex" | "base64">> = {
   shopify: "base64",
   slack: "hex",
   standard_webhooks: "base64",
+  twilio: "base64", // base64 HMAC-SHA1 over the URL
+  vercel: "hex", // hex HMAC-SHA1 over the raw body
 };
 
 const d = (det: Details, k: string): string | undefined => {
@@ -101,8 +107,10 @@ export const CAUSE_FIX: Record<
   missing_secret: () =>
     "no signing secret set for this endpoint — add it in Settings so hookd can verify.",
 
-  signature_mismatch: () =>
-    "computed ≠ provided with the current secret — the secret is wrong or rotated, or you're signing a different body than what was actually sent.",
+  signature_mismatch: (_det, provider) =>
+    provider === "twilio"
+      ? "twilio binds the signature to the exact url it was configured to call (scheme + host + path + query), so it only verifies when the url hookd received on matches what twilio sent to — a proxy that rewrites the host or path breaks it. confirm that url matches your twilio webhook config, and that the auth token is current."
+      : "computed ≠ provided with the current secret — the secret is wrong or rotated, or you're signing a different body than what was actually sent.",
 
   timestamp_out_of_tolerance: (det, provider) => {
     const skew = d(det, "skew_seconds");
@@ -121,7 +129,7 @@ export const CAUSE_FIX: Record<
     const expectedTxt = expected ?? "its canonical encoding";
     return `the digest is correct but encoded as ${wrong}; ${fixWho(
       provider,
-    )} expects ${expectedTxt}. Decode/encode accordingly (Shopify=base64, Stripe/GitHub/Razorpay=hex).`;
+    )} expects ${expectedTxt}. Decode/encode accordingly (Shopify, Standard Webhooks & Twilio = base64; Stripe, GitHub, Razorpay, Slack & Vercel = hex).`;
   },
 
   body_possibly_altered: (det) => {

@@ -18,7 +18,7 @@ export default function DebuggerPage() {
     <div className="flex min-h-screen flex-col">
       <MarketingNav />
 
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         <Section className="pt-14 pb-10 lg:pt-20">
           <SectionHeading
             title="why won't this webhook verify?"

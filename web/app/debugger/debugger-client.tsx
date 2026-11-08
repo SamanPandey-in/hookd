@@ -28,6 +28,7 @@ export function DebuggerClient() {
   const [secret, setSecret] = React.useState("");
   const [headersText, setHeadersText] = React.useState("");
   const [bodyText, setBodyText] = React.useState("");
+  const [urlText, setUrlText] = React.useState("");
   const [result, setResult] = React.useState<DebugVerifyResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -41,6 +42,7 @@ export function DebuggerClient() {
       setSecret(s.secret);
       setHeadersText(headersToLines(s.headers));
       setBodyText(s.body);
+      setUrlText(s.url ?? "");
     } catch (e) {
       setError(`could not build sample (${String(e)})`);
     }
@@ -58,6 +60,7 @@ export function DebuggerClient() {
         secret,
         headers: parseHeaderLines(headersText),
         body: bodyText,
+        url: urlText,
       });
       setResult(res);
     } catch (e2) {
@@ -116,6 +119,26 @@ export function DebuggerClient() {
               className="h-9 min-w-0 rounded-sm border border-border bg-surface-hi px-3 font-mono text-xs text-text placeholder:text-muted focus-visible:outline-2"
             />
           </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="debug-url">
+            <FieldLabel>Request URL (Twilio)</FieldLabel>
+          </label>
+          <input
+            id="debug-url"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            value={urlText}
+            onChange={(e) => setUrlText(e.target.value)}
+            placeholder="https://your-host/i/ep_… — the exact url the webhook was sent to"
+            className="h-9 w-full rounded-sm border border-border bg-surface-hi px-3 font-mono text-xs text-text placeholder:text-muted focus-visible:outline-2"
+          />
+          <p className="font-mono text-[11px] text-muted">
+            only twilio needs this — its signature is bound to the exact url it
+            called. other providers ignore it.
+          </p>
         </div>
 
         <div className="flex flex-col gap-1.5">

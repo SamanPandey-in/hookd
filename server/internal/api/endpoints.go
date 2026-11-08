@@ -255,17 +255,21 @@ func (a *API) SendSample(w http.ResponseWriter, r *http.Request) {
 	// sample's top-level "type" or its provider header like X-Shopify-Topic).
 	ev.EventType = ingest.DeriveEventType(pairsToHeader(ev.Headers), ev.ContentType, ev.RawBody)
 
+	// The sample's ingest URL — what a real sender (e.g. Twilio) would be pointed
+	// at — so a URL-bound signature signs and verifies against the same URL.
+	ingestURL := httpx.ExternalBaseURL(r) + "/i/" + ep.ID
+
 	// Sign + verify if a secret is configured, so the demo shows a clean PASS.
 	if enc, err := a.Store.GetEndpointSecret(ctx(r), ep.ID); err == nil && len(enc) > 0 {
 		if secret, derr := a.Cipher.DecryptString(enc); derr == nil {
-			signRes := verify.Sign(verify.SignInput{Provider: provider, Secret: secret, Body: sample.Body})
+			signRes := verify.Sign(verify.SignInput{Provider: provider, Secret: secret, Body: sample.Body, URL: ingestURL})
 			if signRes.Err == nil {
 				for k, v := range signRes.Headers {
 					headers = append(headers, store.HeaderPair{Name: k, Value: v})
 				}
 				ev.Headers = headers
 				vres := verify.Verify(verify.Input{
-					Provider: provider, Secret: secret, Headers: pairsToHeader(headers), Body: sample.Body,
+					Provider: provider, Secret: secret, Headers: pairsToHeader(headers), Body: sample.Body, URL: ingestURL,
 				})
 				ev.VerifyStatus = string(vres.Status)
 				ev.VerifyCause = string(vres.Cause)
@@ -304,7 +308,7 @@ func (a *API) publishEvent(endpointID string, ev *store.Event) {
 
 func validProvider(p string) bool {
 	switch verify.Provider(p) {
-	case verify.Stripe, verify.GitHub, verify.Razorpay, verify.Shopify, verify.StandardWebhooks, verify.Slack:
+	case verify.Stripe, verify.GitHub, verify.Razorpay, verify.Shopify, verify.StandardWebhooks, verify.Slack, verify.Twilio, verify.Vercel:
 		return true
 	}
 	return false

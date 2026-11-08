@@ -1,8 +1,8 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { LifeBuoy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // The settings section sub-nav. Items point at the sibling /settings/* routes
@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
 // never renders it. Docs is a top-level destination, not a settings tab, so it
 // is NOT listed here (see the command bar). Active treatment matches the app's
 // command-bar: a lime left-rule + full-strength ink (DESIGN §5.1 / §8 — the
-// lime accent is spent sparingly, here only to mark the current section).
+// lime accent is spent sparingly, here only to mark the current section). A
+// quiet support link sits in the rail footer (P1-5 hand-off).
 
 export interface SettingsNavItem {
   href: string;
@@ -31,6 +32,11 @@ export const SETTINGS_NAV: SettingsNavItem[] = [
     match: (p) => p.startsWith("/settings/appearance"),
   },
   {
+    href: "/settings/notifications",
+    label: "notifications",
+    match: (p) => p.startsWith("/settings/notifications"),
+  },
+  {
     href: "/settings/api-keys",
     label: "api keys",
     match: (p) => p.startsWith("/settings/api-keys"),
@@ -40,17 +46,19 @@ export const SETTINGS_NAV: SettingsNavItem[] = [
     label: "activity",
     match: (p) => p.startsWith("/settings/activity"),
   },
-  { href: "/settings/billing", label: "billing", match: (p) => p.startsWith("/settings/billing") || p.startsWith("/account") },
+  {
+    href: "/settings/billing",
+    label: "billing",
+    match: (p) => p.startsWith("/settings/billing") || p.startsWith("/account"),
+  },
 ];
 
-/** Desktop: a vertical rail. Each item is a Link with a 2px active left-rule. */
+/** Desktop: a vertical rail. Each item is a Link with a 2px active left-rule;
+ *  a muted support link sits beneath, separated by a hairline. */
 export function SettingsNav({ className }: { className?: string }) {
   const pathname = usePathname() ?? "";
   return (
-    <nav
-      aria-label="settings"
-      className={cn("flex flex-col gap-0.5", className)}
-    >
+    <nav aria-label="settings" className={cn("flex flex-col gap-0.5", className)}>
       {SETTINGS_NAV.map((item) => {
         const active = item.match(pathname);
         return (
@@ -69,11 +77,20 @@ export function SettingsNav({ className }: { className?: string }) {
           </Link>
         );
       })}
+      <Link
+        href="/support"
+        className="mt-2 flex items-center gap-1.5 border-t border-border px-3 pt-3 font-sans text-sm text-muted transition-colors duration-[80ms] hover:text-text focus-visible:outline-2"
+      >
+        <LifeBuoy className="h-3.5 w-3.5" aria-hidden />
+        support
+      </Link>
     </nav>
   );
 }
 
-/** Mobile: a horizontally-scrolling tab strip of the same items. */
+/** Mobile: a horizontally-scrolling tab strip of the same items, plus support.
+ *  The strip scrolls, so it already covers very narrow widths — no separate
+ *  <select> fallback is needed (the former SettingsNavSelect was dead code). */
 export function SettingsNavMobile({ className }: { className?: string }) {
   const pathname = usePathname() ?? "";
   return (
@@ -102,31 +119,13 @@ export function SettingsNavMobile({ className }: { className?: string }) {
           </Link>
         );
       })}
-    </nav>
-  );
-}
-
-/** Mobile fallback for very narrow widths handled by CSS; this <select> jumps
- *  between sections without relying on hover/scroll. Used alongside the strip. */
-export function SettingsNavSelect({ className }: { className?: string }) {
-  const pathname = usePathname() ?? "";
-  const router = useRouter();
-  const current =
-    SETTINGS_NAV.find((i) => i.match(pathname))?.href ?? "/settings/profile";
-  return (
-    <label className={cn("block", className)}>
-      <span className="sr-only">settings section</span>
-      <select
-        value={current}
-        onChange={(e) => router.push(e.target.value)}
-        className="h-9 w-full rounded-sm border border-border bg-surface-hi px-3 font-sans text-sm text-text focus-visible:outline-2"
+      <Link
+        href="/support"
+        className="-mb-px flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-2.5 font-sans text-sm text-muted transition-colors duration-[80ms] hover:text-text focus-visible:outline-2"
       >
-        {SETTINGS_NAV.map((item) => (
-          <option key={item.href} value={item.href}>
-            {item.label}
-          </option>
-        ))}
-      </select>
-    </label>
+        <LifeBuoy className="h-3.5 w-3.5" aria-hidden />
+        support
+      </Link>
+    </nav>
   );
 }

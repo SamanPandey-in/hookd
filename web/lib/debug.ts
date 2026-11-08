@@ -26,6 +26,9 @@ export interface DebugVerifyInput {
   secret: string;
   headers: Record<string, string>;
   body: string;
+  /** Full external URL the request was made to. Optional; only Twilio (whose
+   *  signature is URL-bound) reads it — every other scheme ignores it. */
+  url?: string;
 }
 
 /** The subset of verify.Result the debugger renders — the same fields
@@ -55,6 +58,7 @@ export async function debugVerify(
         secret: input.secret,
         headers: input.headers,
         body: input.body,
+        url: input.url || undefined,
       }),
     });
   } catch (e) {

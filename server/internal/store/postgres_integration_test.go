@@ -160,7 +160,7 @@ func TestPGProfileKeysActivityAndDeleteAccount(t *testing.T) {
 	if err != nil || found.ID != k.ID || found.UserID != u.ID {
 		t.Fatalf("lookup by hash: %v %+v", err, found)
 	}
-	if err := pg.TouchAPIKey(ctx, k.ID, time.Now().UnixMilli()); err != nil {
+	if err := pg.TouchAPIKey(ctx, k.ID, time.Now().UnixMilli(), "1.2.3.4"); err != nil {
 		t.Fatalf("touch: %v", err)
 	}
 	keys, _ = pg.ListAPIKeys(ctx, u.ID)
@@ -178,7 +178,7 @@ func TestPGProfileKeysActivityAndDeleteAccount(t *testing.T) {
 			t.Fatalf("insert activity %s: %v", act, err)
 		}
 	}
-	acts, err := pg.ListActivity(ctx, u.ID, 50)
+	acts, err := pg.ListActivity(ctx, u.ID, 50, 0)
 	if err != nil || len(acts) != 3 {
 		t.Fatalf("list activity: %v n=%d", err, len(acts))
 	}
@@ -202,7 +202,7 @@ func TestPGProfileKeysActivityAndDeleteAccount(t *testing.T) {
 	if ks, _ := pg.ListAPIKeys(ctx, u.ID); len(ks) != 0 {
 		t.Fatalf("keys not cascaded: %d", len(ks))
 	}
-	if as, _ := pg.ListActivity(ctx, u.ID, 50); len(as) != 0 {
+	if as, _ := pg.ListActivity(ctx, u.ID, 50, 0); len(as) != 0 {
 		t.Fatalf("activity not cascaded: %d", len(as))
 	}
 	if eps, _ := pg.ListEndpoints(ctx, u.ID); len(eps) != 0 {

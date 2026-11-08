@@ -17,11 +17,7 @@ import { ProviderSelect } from "@/components/ui/provider-select";
 import { ProLock, UpgradePrompt, UpgradeLink } from "@/components/ui/upgrade";
 import { SkeletonRows, ErrorBanner, EmptyState } from "@/components/ui/states";
 import { EndpointCard, type EndpointStats } from "@/components/dashboard/endpoint-card";
-
-// The free plan caps how many endpoints you can create. This is the UI nudge
-// only — the server's 402 is the authoritative gate, so a stale value here can
-// never let a free account exceed the real limit (the create call still 402s).
-const FREE_ENDPOINT_CAP = 3;
+import { OnboardingPanel } from "@/components/dashboard/onboarding";
 
 function computeStats(events: EventSummary[]): EndpointStats {
   const count = events.length;
@@ -51,7 +47,11 @@ export default function DashboardPage() {
   const now = useClientNow();
   const me = useMe();
   const isPro = me?.plan === "pro";
-  const atCap = !isPro && list !== null && list.length >= FREE_ENDPOINT_CAP;
+  // Caps come from the server (plan.go) via /me — never hardcoded here, so the
+  // wall the UI draws always matches the limit the API actually enforces.
+  const cap = me?.limits?.max_endpoints ?? 2;
+  const proCap = me?.limits?.pro_max_endpoints ?? 25;
+  const atCap = !isPro && list !== null && list.length >= cap;
 
   // setState happens only after the first await, so this is safe to call from
   // an effect (no synchronous state write in the effect body).
@@ -95,7 +95,14 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      <CreateEndpoint onCreated={load} atCap={atCap} />
+      <OnboardingPanel
+        endpoints={list}
+        isPro={isPro}
+        cap={cap}
+        onChanged={load}
+      />
+
+      <CreateEndpoint onCreated={load} atCap={atCap} cap={cap} proCap={proCap} />
 
       {error && (
         <ErrorBanner
@@ -134,11 +141,17 @@ export default function DashboardPage() {
 function CreateEndpoint({
   onCreated,
   atCap,
+  cap,
+  proCap,
 }: {
   onCreated: () => void;
   /** Free plan at its endpoint limit — annotate + disable rather than letting
    *  the create silently fail. */
   atCap: boolean;
+  /** The caller's own endpoint cap (free: 2) from /me. */
+  cap: number;
+  /** The Pro-tier cap (25) from /me — used only in upgrade copy. */
+  proCap: number;
 }) {
   const [name, setName] = React.useState("");
   const [provider, setProvider] = React.useState<Provider | "">("");
@@ -205,7 +218,8 @@ function CreateEndpoint({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <ProLock />
           <p className="font-mono text-xs text-muted">
-            free includes {FREE_ENDPOINT_CAP} endpoints — pro lifts the cap.
+            free includes {cap} endpoint{cap === 1 ? "" : "s"} — pro lifts the
+            cap to {proCap}.
           </p>
           <UpgradeLink />
         </div>
@@ -213,7 +227,7 @@ function CreateEndpoint({
       {upgrade && (
         <UpgradePrompt
           className="mt-3"
-          message={`you've hit the free limit of ${FREE_ENDPOINT_CAP} endpoints.`}
+          message={`you've reached the free limit of ${cap} endpoint${cap === 1 ? "" : "s"} — pro lifts it to ${proCap}.`}
         />
       )}
       {err && (
@@ -262,32 +276,56 @@ function SampleButton({
   onSent: () => void;
 }) {
   const [busy, setBusy] = React.useState(false);
-  const disabled = !endpoint.provider || busy;
+  const [err, setErr] = React.useState<string | null>(null);
+  const errTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(
+    () => () => {
+      if (errTimer.current) clearTimeout(errTimer.current);
+    },
+    [],
+  );
+
+  const send = async () => {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      // No provider → the backend sends a generic sample, so an auto-detect
+      // endpoint can be sampled too (P1-13), not just one with a provider set.
+      await endpointsApi.sendSample(endpoint.id);
+      onSent();
+    } catch (e) {
+      // Surface the failure instead of swallowing it (P1-14). It is transient
+      // (a brief inline note), auto-dismissed so it doesn't linger as stale.
+      setErr(e instanceof ApiError ? e.message : (e as Error).message || "failed");
+      if (errTimer.current) clearTimeout(errTimer.current);
+      errTimer.current = setTimeout(() => setErr(null), 6000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      disabled={disabled}
-      title={
-        endpoint.provider
-          ? "send a sample event"
-          : "set a provider to send a sample"
-      }
-      aria-label="send a sample event"
-      onClick={async () => {
-        if (disabled) return;
-        setBusy(true);
-        try {
-          await endpointsApi.sendSample(endpoint.id);
-          onSent();
-        } catch {
-          /* surfaced on the inspector; keep the dashboard quiet */
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <Send className="h-4 w-4" />
-    </Button>
+    <div className="flex shrink-0 flex-col items-end gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled={busy}
+        title="send a sample event"
+        aria-label="send a sample event"
+        onClick={send}
+      >
+        <Send className="h-4 w-4" />
+      </Button>
+      {err && (
+        <span
+          role="status"
+          className="max-w-[12rem] text-right font-mono text-[10px] leading-tight"
+          style={{ color: "var(--fail)" }}
+        >
+          sample failed — {err}
+        </span>
+      )}
+    </div>
   );
 }

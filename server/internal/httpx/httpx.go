@@ -21,7 +21,35 @@ type ctxKey int
 const (
 	ctxRequestID ctxKey = iota
 	ctxUserID
+	ctxClientIP
+	ctxUserAgent
+	ctxScopes
 )
+
+// WithRequestMeta stashes the client IP + user agent on the context so
+// best-effort audit-log writers (activity) can record where/what a request came
+// from without threading *http.Request through every handler. Neither is a
+// secret value.
+func WithRequestMeta(ctx context.Context, ip, userAgent string) context.Context {
+	ctx = context.WithValue(ctx, ctxClientIP, ip)
+	return context.WithValue(ctx, ctxUserAgent, userAgent)
+}
+
+// ClientIPFromContext returns the request's client IP stashed by WithRequestMeta, or "".
+func ClientIPFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(ctxClientIP).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// UserAgentFromContext returns the request's user agent stashed by WithRequestMeta, or "".
+func UserAgentFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(ctxUserAgent).(string); ok {
+		return v
+	}
+	return ""
+}
 
 // RequestID returns the request id stored on the context, if any.
 func RequestID(ctx context.Context) string {
@@ -42,6 +70,39 @@ func UserID(ctx context.Context) int64 {
 		return v
 	}
 	return 0
+}
+
+// WithScopes stashes the authorization scopes the current request may use. It is
+// set by the auth middleware: API-key auth carries the key's scopes; session
+// (cookie) auth and unit tests set nothing, and an absent/empty scope set is
+// treated as FULL access by ScopeAllowed (so sessions and legacy keys are
+// unrestricted). Scopes are not secret values.
+func WithScopes(ctx context.Context, scopes []string) context.Context {
+	return context.WithValue(ctx, ctxScopes, scopes)
+}
+
+// Scopes returns the scopes stashed on the context, or nil when none were set.
+func Scopes(ctx context.Context) []string {
+	if v, ok := ctx.Value(ctxScopes).([]string); ok {
+		return v
+	}
+	return nil
+}
+
+// ScopeAllowed reports whether the request's scopes permit an action requiring
+// want. An absent or empty scope set means FULL access and always allows — this
+// keeps session auth and pre-scopes API keys unrestricted.
+func ScopeAllowed(ctx context.Context, want string) bool {
+	scopes := Scopes(ctx)
+	if len(scopes) == 0 {
+		return true
+	}
+	for _, s := range scopes {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // Recover converts panics into a 500 and logs with the request id, never the
@@ -177,6 +238,45 @@ func ClientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// ExternalBaseURL reconstructs the scheme + host the client originally reached,
+// honoring a single trusted proxy's X-Forwarded-Proto / X-Forwarded-Host (Caddy
+// sets these; the production deploy binds 127.0.0.1 so these forwarded values
+// are trusted). It falls back to the request's own TLS state and Host. The
+// result has no trailing slash and no path.
+func ExternalBaseURL(r *http.Request) string {
+	scheme := "http"
+	if p := firstForwardedValue(r.Header.Get("X-Forwarded-Proto")); p != "" {
+		scheme = p
+	} else if r.TLS != nil {
+		scheme = "https"
+	}
+	host := firstForwardedValue(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = r.Host
+	}
+	return scheme + "://" + host
+}
+
+// ExternalURL reconstructs the full absolute URL the client requested:
+// ExternalBaseURL + the request path + the exact raw query as received. This is
+// the URL a URL-bound signature scheme (e.g. Twilio) was pointed at.
+func ExternalURL(r *http.Request) string {
+	u := ExternalBaseURL(r) + r.URL.EscapedPath()
+	if r.URL.RawQuery != "" {
+		u += "?" + r.URL.RawQuery
+	}
+	return u
+}
+
+// firstForwardedValue returns the first, trimmed entry of a possibly
+// comma-separated forwarded header value (only the nearest proxy is trusted).
+func firstForwardedValue(v string) string {
+	if i := strings.IndexByte(v, ','); i >= 0 {
+		v = v[:i]
+	}
+	return strings.TrimSpace(v)
 }
 
 // --- JSON helpers ---

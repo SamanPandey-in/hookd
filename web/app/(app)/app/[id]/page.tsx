@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Settings, ChevronLeft, Command, Search } from "lucide-react";
+import { Settings, ChevronLeft, Command, Search, X } from "lucide-react";
 import {
   endpoints as endpointsApi,
   events as eventsApi,
@@ -19,7 +19,7 @@ import type {
   StreamEvent,
   VerifyStatus,
 } from "@/lib/types";
-import { useEventStream } from "@/lib/use-event-stream";
+import { useEventStream, type StreamStatus } from "@/lib/use-event-stream";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn } from "@/lib/utils";
 import { LiveDot } from "@/components/ui/status";
@@ -71,7 +71,23 @@ export default function InspectorPage() {
   const [tab, setTab] = React.useState<DetailTab>("headers");
   const [replayOpen, setReplayOpen] = React.useState(false);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
+  const [legendOpen, setLegendOpen] = React.useState(false);
   const [mobileDetail, setMobileDetail] = React.useState(false);
+
+  // Stated platform is Windows; detect client-side so the ⌘K/Ctrl K hint and
+  // the shortcuts legend match the real keyboard (avoids an SSR mismatch).
+  const [isMac, setIsMac] = React.useState(false);
+  const modKey = isMac ? "⌘K" : "Ctrl K";
+
+  // Live-feed resilience (P1-10/P1-11): a polite announcement on connect/drop,
+  // and whether we've ever been open (so a first connect reads "connecting…",
+  // not "paused").
+  const [liveAnnounce, setLiveAnnounce] = React.useState("");
+  const [everConnected, setEverConnected] = React.useState(false);
+
+  // One-click sample from the waiting empty state (P1-15).
+  const [sampleBusy, setSampleBusy] = React.useState(false);
+  const [sampleErr, setSampleErr] = React.useState<string | null>(null);
 
   const [details, setDetails] = React.useState<Record<string, EventDetail>>({});
   const [attempts, setAttempts] = React.useState<Record<string, ReplayAttempt[]>>({});
@@ -111,6 +127,61 @@ export default function InspectorPage() {
     loadEndpoint();
     loadEvents();
   }, [loadEndpoint, loadEvents]);
+
+  React.useEffect(() => {
+    // Detecting the platform is a sync external read → safe in an effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsMac(
+      /mac|iphone|ipad|ipod/i.test(
+        navigator.platform || navigator.userAgent || "",
+      ),
+    );
+  }, []);
+
+  // Surface stream loss (P1-10) + backfill the gap on reconnect (P1-11).
+  const prevStatus = React.useRef<StreamStatus>(stream.status);
+  React.useEffect(() => {
+    const prev = prevStatus.current;
+    if (prev === stream.status) return;
+    prevStatus.current = stream.status;
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (stream.status === "open") {
+      // A reconnect = we'd dropped (error), or we were re-establishing after a
+      // prior successful connect. A first connect (everConnected still false)
+      // is NOT a reconnect, so it neither re-announces nor re-loads.
+      const reconnected =
+        prev === "error" || (prev === "connecting" && everConnected);
+      setEverConnected(true);
+      if (reconnected) {
+        // Re-run the initial load so events captured while the feed was down
+        // appear; the merge/dedupe in `rows` already tolerates the overlap.
+        setLiveAnnounce("live capture reconnected");
+        loadEvents();
+      } else {
+        setLiveAnnounce("live capture connected");
+      }
+    } else if (prev === "open") {
+      setLiveAnnounce("live capture paused — reconnecting");
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [stream.status, everConnected, loadEvents]);
+
+  const sendSample = React.useCallback(async () => {
+    if (sampleBusy) return;
+    setSampleBusy(true);
+    setSampleErr(null);
+    try {
+      // No provider → the backend sends a generic sample, so this works for
+      // auto-detect endpoints too. The live feed delivers it; reload as a
+      // fallback in case the stream is momentarily down.
+      await endpointsApi.sendSample(id);
+      await loadEvents();
+    } catch (e) {
+      setSampleErr((e as Error).message);
+    } finally {
+      setSampleBusy(false);
+    }
+  }, [id, sampleBusy, loadEvents]);
 
   // --- merge live + historical, dedupe, sort newest-first -------------------
   const liveIds = React.useMemo(
@@ -209,6 +280,11 @@ export default function InspectorPage() {
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && legendOpen) {
+        e.preventDefault();
+        setLegendOpen(false);
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((o) => !o);
@@ -225,6 +301,14 @@ export default function InspectorPage() {
       )
         return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // `?` (Shift+/) toggles the shortcuts legend — j/k/r/1–4 are otherwise
+      // undiscoverable.
+      if (e.key === "?") {
+        e.preventDefault();
+        setLegendOpen((o) => !o);
+        return;
+      }
 
       const k = e.key.toLowerCase();
       if (k === "j") {
@@ -243,7 +327,7 @@ export default function InspectorPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [paletteOpen, move, openReplay]);
+  }, [paletteOpen, legendOpen, move, openReplay]);
 
   const select = (rowId: string) => {
     setSelectedId(rowId);
@@ -280,7 +364,13 @@ export default function InspectorPage() {
             {endpoint?.name ?? "…"}
           </span>
         </nav>
-        <LiveDot on={stream.status === "open"} />
+        {/* LiveDot renders the visible live / reconnecting… / offline label for
+            the stream state — no separate reconnecting notice beside it. */}
+        <LiveDot status={stream.status} />
+        {/* Polite announcement of connect/drop transitions for SR users. */}
+        <span className="sr-only" role="status" aria-live="polite">
+          {liveAnnounce}
+        </span>
         <button
           type="button"
           onClick={() => setPaletteOpen(true)}
@@ -288,7 +378,16 @@ export default function InspectorPage() {
           aria-label="open command palette"
         >
           <Command className="h-3.5 w-3.5" />
-          <kbd className="font-mono text-[10px]">⌘K</kbd>
+          <kbd className="font-mono text-[10px]">{modKey}</kbd>
+        </button>
+        <button
+          type="button"
+          onClick={() => setLegendOpen(true)}
+          className="inline-flex h-8 items-center justify-center rounded-sm border border-border bg-surface px-2 text-muted hover:text-text cursor-pointer focus-visible:outline-2"
+          aria-label="keyboard shortcuts"
+          title="keyboard shortcuts"
+        >
+          <kbd className="font-mono text-[11px]">?</kbd>
         </button>
         <div className="ml-auto flex items-center gap-2">
           {endpoint && (
@@ -296,7 +395,7 @@ export default function InspectorPage() {
               value={ingestURL(endpoint.id)}
               display={`/i/${endpoint.id}`}
               label="copy ingest url"
-              className="hidden max-w-[20rem] sm:flex"
+              className="flex max-w-[12rem] sm:max-w-[20rem]"
             />
           )}
           <Link href={`/app/${id}/settings`} aria-label="endpoint settings">
@@ -328,7 +427,13 @@ export default function InspectorPage() {
             count={rows.length}
             isPro={isPro}
           />
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div
+            className="min-h-0 flex-1 overflow-auto"
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-label="captured events"
+          >
             {initialErr && (
               <div className="p-3">
                 <ErrorBanner
@@ -360,7 +465,12 @@ export default function InspectorPage() {
                   }
                 />
               ) : endpoint ? (
-                <WaitingEmptyState ingestURL={ingestURL(endpoint.id)} />
+                <WaitingEmptyState
+                  ingestURL={ingestURL(endpoint.id)}
+                  onSendSample={sendSample}
+                  sending={sampleBusy}
+                  sampleError={sampleErr}
+                />
               ) : null)}
             {rows.map((r) => (
               <StreamRow
@@ -433,6 +543,81 @@ export default function InspectorPage() {
         onReplay={openReplay}
         hasSelection={!!selectedDetail}
       />
+
+      <ShortcutsLegend
+        open={legendOpen}
+        onClose={() => setLegendOpen(false)}
+        modKey={modKey}
+      />
+    </div>
+  );
+}
+
+/** A `?`-triggered overlay listing the inspector's keyboard shortcuts — j/k/r
+ *  and 1–4 are otherwise undiscoverable. Esc or a backdrop click closes it. */
+function ShortcutsLegend({
+  open,
+  onClose,
+  modKey,
+}: {
+  open: boolean;
+  onClose: () => void;
+  modKey: string;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (open) ref.current?.focus();
+  }, [open]);
+  if (!open) return null;
+  const rows: [string, string][] = [
+    ["j / k", "move selection down / up"],
+    ["r", "replay the selected event"],
+    ["1 – 4", "switch detail tabs"],
+    [modKey, "open the command palette"],
+    ["?", "toggle this legend"],
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button
+        type="button"
+        aria-label="close keyboard shortcuts"
+        onClick={onClose}
+        className="absolute inset-0 cursor-default bg-black/40"
+      />
+      <div
+        ref={ref}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label="keyboard shortcuts"
+        className="relative w-full max-w-sm rounded-md border border-border bg-surface p-4 focus-visible:outline-2"
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-sans text-sm font-semibold text-text">
+            keyboard shortcuts
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="close"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-muted hover:text-text cursor-pointer focus-visible:outline-2"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <dl className="flex flex-col gap-2">
+          {rows.map(([k, desc]) => (
+            <div key={k} className="flex items-center justify-between gap-4">
+              <dt>
+                <kbd className="rounded-sm border border-border bg-surface-hi px-1.5 py-0.5 font-mono text-[11px] text-text">
+                  {k}
+                </kbd>
+              </dt>
+              <dd className="font-mono text-xs text-muted">{desc}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
     </div>
   );
 }

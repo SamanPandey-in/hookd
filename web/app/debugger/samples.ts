@@ -14,6 +14,9 @@ export interface DebugSample {
    *  realism); the signature headers are added by signSample(). */
   headers: Record<string, string>;
   body: string;
+  /** The full external URL the request was made to. Only Twilio needs it (its
+   *  signature is URL-bound); omitted for every other provider. */
+  url?: string;
 }
 
 // Bodies mirror server/internal/samples/samples.go so the tool feels real.
@@ -65,6 +68,26 @@ export const SAMPLES: Record<Provider, DebugSample> = {
     headers: { "Content-Type": "application/json" },
     body: `{"token":"sampletoken","team_id":"T0001","api_app_id":"A0001","event":{"type":"app_mention","user":"U0001","text":"<@U0BOT> ship it","ts":"1700000000.000100","channel":"C0001"},"type":"event_callback","event_id":"Ev0001","event_time":1700000000}`,
   },
+  twilio: {
+    provider: "twilio",
+    // Twilio's account auth token is the HMAC key (used verbatim).
+    secret: "twilio_auth_token_demo_0001",
+    // Twilio's messaging webhooks are form-encoded; the "+" in numbers is
+    // percent-encoded on the wire exactly as Twilio posts it.
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `MessageSid=SM0a1b2c3d4e5f60718293a4b5c6d7e8f90&AccountSid=ACcafebabecafebabecafebabecafebabe&MessagingServiceSid=MG9876543210fedcba9876543210fedcb0&From=%2B14155550123&To=%2B18005551212&Body=your+hookd+code+is+2468&NumMedia=0&NumSegments=1&SmsStatus=received&ApiVersion=2010-04-01`,
+    url: "https://api.hookd.dev/i/ep_twilio_demo",
+  },
+  vercel: {
+    provider: "vercel",
+    secret: "vercel_whsecret_demo_0001",
+    headers: {
+      "x-vercel-deployment-url": "demo-ship-1a2b3c.vercel.app",
+      "x-vercel-id": "iad1::sample-0001",
+      "Content-Type": "application/json",
+    },
+    body: `{"id":"evt_vercel_sample0001","type":"deployment.succeeded","createdAt":1700000000,"region":"iad1","payload":{"team":{"id":"team_sample"},"user":{"id":"user_sample"},"deployment":{"id":"dpl_sample0001","name":"demo-ship","url":"demo-ship-1a2b3c.vercel.app","meta":{"githubCommitRef":"main","githubCommitSha":"a1b2c3d4"}},"project":{"id":"prj_sample0001"},"target":"production"}}`,
+  },
 };
 
 // ---- Web Crypto HMAC helpers (browser + Node 18+ expose globalThis.crypto) --
@@ -103,6 +126,31 @@ async function hmacSha256(key: Uint8Array, msg: string): Promise<ArrayBuffer> {
   return crypto.subtle.sign("HMAC", k, enc.encode(msg));
 }
 
+async function hmacSha1(key: Uint8Array, msg: string): Promise<ArrayBuffer> {
+  const k = await crypto.subtle.importKey(
+    "raw",
+    key.slice(),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
+  return crypto.subtle.sign("HMAC", k, enc.encode(msg));
+}
+
+/** Build Twilio's form-mode signing string: the URL followed by each POST param
+ *  (keys sorted ascending; each key's url-decoded values sorted+deduped) with no
+ *  separators. Mirrors the Go verify engine's twilioFormData exactly. */
+function twilioFormData(url: string, body: string): string {
+  const params = new URLSearchParams(body);
+  const keys = Array.from(new Set(Array.from(params.keys()))).sort();
+  let data = url;
+  for (const k of keys) {
+    const vals = Array.from(new Set(params.getAll(k))).sort();
+    for (const v of vals) data += k + v;
+  }
+  return data;
+}
+
 /** The pre-filled fields for a provider sample, with freshly computed signature
  *  headers merged in. Returns a flat key:value header map (as the textarea wants). */
 export async function signSample(provider: Provider): Promise<{
@@ -110,6 +158,7 @@ export async function signSample(provider: Provider): Promise<{
   secret: string;
   headers: Record<string, string>;
   body: string;
+  url?: string;
 }> {
   const s = SAMPLES[provider];
   const headers: Record<string, string> = { ...s.headers };
@@ -151,9 +200,23 @@ export async function signSample(provider: Provider): Promise<{
       headers["Webhook-Signature"] = `v1,${b64}`;
       break;
     }
+    case "twilio": {
+      // URL-bound, form-encoded HMAC-SHA1 over url + sorted params.
+      const data = twilioFormData(s.url ?? "", s.body);
+      headers["X-Twilio-Signature"] = toBase64(
+        await hmacSha1(enc.encode(s.secret), data),
+      );
+      break;
+    }
+    case "vercel": {
+      // hex HMAC-SHA1 over the raw body (no prefix, no timestamp).
+      const hex = toHex(await hmacSha1(enc.encode(s.secret), s.body));
+      headers["x-vercel-signature"] = hex;
+      break;
+    }
   }
 
-  return { provider, secret: s.secret, headers, body: s.body };
+  return { provider, secret: s.secret, headers, body: s.body, url: s.url };
 }
 
 /** Serialize a header map to the textarea's `key: value` line format. */

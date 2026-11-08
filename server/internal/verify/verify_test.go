@@ -19,6 +19,7 @@ func TestDetect(t *testing.T) {
 		{"razorpay", hdr("X-Razorpay-Signature", "abc"), Razorpay, true},
 		{"shopify", hdr("X-Shopify-Hmac-Sha256", "abc"), Shopify, true},
 		{"slack", hdr("X-Slack-Signature", "v0=abc"), Slack, true},
+		{"vercel", hdr("x-vercel-signature", "abc"), Vercel, true},
 		{"standard_webhooks", hdr("webhook-id", "msg_1", "webhook-timestamp", "1", "webhook-signature", "v1,abc"), StandardWebhooks, true},
 		{"sw_incomplete_is_not_detected", hdr("webhook-signature", "v1,abc"), "", false},
 		{"none", hdr("Content-Type", "application/json"), "", false},
@@ -48,6 +49,7 @@ var roundTripSecret = map[Provider]string{
 	Shopify:          "shopify_roundtrip_secret",
 	StandardWebhooks: "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
 	Slack:            "slack_roundtrip_secret",
+	Vercel:           "vercel_roundtrip_secret",
 }
 
 // Sign(body) then Verify(body) must Pass for every provider; tampering the body
@@ -56,7 +58,7 @@ func TestRoundTrip_AllProviders(t *testing.T) {
 	now := fixedNow
 	body := []byte(`{"id":"evt_roundtrip","amount":4200,"currency":"usd"}`)
 
-	for _, p := range []Provider{Stripe, GitHub, Razorpay, Shopify, StandardWebhooks, Slack} {
+	for _, p := range []Provider{Stripe, GitHub, Razorpay, Shopify, StandardWebhooks, Slack, Vercel} {
 		t.Run(string(p), func(t *testing.T) {
 			secret := roundTripSecret[p]
 			sr := Sign(SignInput{Provider: p, Secret: secret, Body: body, Now: now})
@@ -84,7 +86,7 @@ func TestRoundTrip_AllProviders(t *testing.T) {
 }
 
 func TestSign_MissingSecret(t *testing.T) {
-	for _, p := range []Provider{Stripe, GitHub, Razorpay, Shopify, StandardWebhooks, Slack} {
+	for _, p := range []Provider{Stripe, GitHub, Razorpay, Shopify, StandardWebhooks, Slack, Vercel} {
 		sr := Sign(SignInput{Provider: p, Secret: "", Body: []byte("{}"), Now: fixedNow})
 		if sr.Err == nil {
 			t.Errorf("Sign(%s) with empty secret: expected error, got headers %v", p, sr.Headers)
@@ -106,7 +108,7 @@ func TestSign_UnsupportedProvider(t *testing.T) {
 
 // Every v1 provider must be registered as both a Verifier and a Signer.
 func TestRegistration(t *testing.T) {
-	for _, p := range []Provider{Stripe, GitHub, Razorpay, Shopify, StandardWebhooks, Slack} {
+	for _, p := range []Provider{Stripe, GitHub, Razorpay, Shopify, StandardWebhooks, Slack, Vercel} {
 		if _, ok := Default.Get(p); !ok {
 			t.Errorf("no verifier registered for %s", p)
 		}

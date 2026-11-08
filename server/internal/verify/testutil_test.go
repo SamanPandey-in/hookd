@@ -60,6 +60,12 @@ func macHexSHA1(secret, msg string) string {
 	return hex.EncodeToString(m.Sum(nil))
 }
 
+func macB64SHA1(secret, msg string) string {
+	m := hmac.New(sha1.New, []byte(secret))
+	m.Write([]byte(msg))
+	return base64.StdEncoding.EncodeToString(m.Sum(nil))
+}
+
 // assertResult checks status + cause and fails with the full result on mismatch.
 func assertResult(t *testing.T, got Result, wantStatus Status, wantCause Cause) {
 	t.Helper()

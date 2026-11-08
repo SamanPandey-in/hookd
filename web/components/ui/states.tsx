@@ -82,14 +82,35 @@ export function ErrorBanner({
 
 // ---- Empty: a WORKING empty state (DESIGN §7) ------------------------------
 // Copy-able ingest URL + "point your webhook here" + a `● waiting` pulse.
+// A dev with no provider or curl handy was stranded here (P1-15), so it also
+// offers a one-click sample and a ready-to-run curl.
+
+/** A ready-to-run curl that POSTs a JSON sample at the ingest URL. Single line
+ *  so it copies and pastes cleanly. */
+export function sampleCurl(ingestURL: string): string {
+  return `curl -X POST ${ingestURL} -H 'content-type: application/json' -d '{"event":"sample","hello":"world"}'`;
+}
 
 export function WaitingEmptyState({
   ingestURL,
   className,
+  curl,
+  onSendSample,
+  sending,
+  sampleError,
 }: {
   ingestURL: string;
   className?: string;
+  /** Override the default curl snippet (defaults to sampleCurl(ingestURL)). */
+  curl?: string;
+  /** When provided, renders a one-click "send a sample event" button. */
+  onSendSample?: () => void;
+  /** The sample send is in flight. */
+  sending?: boolean;
+  /** A failed sample send, surfaced inline (never a toast). */
+  sampleError?: string | null;
 }) {
+  const curlCmd = curl ?? sampleCurl(ingestURL);
   return (
     <div
       className={cn(
@@ -109,6 +130,29 @@ export function WaitingEmptyState({
         className="w-full max-w-md"
         label="copy ingest url"
       />
+
+      {onSendSample && (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={sending}
+          onClick={onSendSample}
+        >
+          {sending ? "sending…" : "send a sample event"}
+        </Button>
+      )}
+      {sampleError && (
+        <p className="font-mono text-xs" style={{ color: "var(--fail)" }}>
+          could not send a sample — {sampleError}
+        </p>
+      )}
+
+      <div className="flex w-full max-w-md flex-col items-stretch gap-1.5">
+        <span className="text-left font-mono text-[11px] text-muted">
+          or fire one from your terminal:
+        </span>
+        <CopyField value={curlCmd} label="copy curl" />
+      </div>
     </div>
   );
 }

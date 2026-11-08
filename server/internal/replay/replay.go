@@ -92,16 +92,24 @@ func (e *Engine) Replay(ctx context.Context, req Request) (*store.ReplayAttempt,
 		return attempt, err
 	}
 
-	outHeaders, err := e.buildHeaders(req)
+	// The signature is computed over the exact URL we will send to (u.String(),
+	// the validated/normalized target). A URL-bound signer (Twilio JSON mode) may
+	// rewrite it — e.g. appending bodySHA256 — and returns the URL it signed, which
+	// we then send to so the two never diverge.
+	outHeaders, signedURL, err := e.buildHeaders(req, u.String())
 	if err != nil {
 		attempt.Error = err.Error()
 		return attempt, err
+	}
+	targetURL := u.String()
+	if signedURL != "" {
+		targetURL = signedURL
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(ctx, req.Event.Method, u.String(), bytes.NewReader(req.outgoingBody()))
+	httpReq, err := http.NewRequestWithContext(ctx, req.Event.Method, targetURL, bytes.NewReader(req.outgoingBody()))
 	if err != nil {
 		attempt.Error = err.Error()
 		return attempt, err
@@ -130,8 +138,11 @@ func (e *Engine) Replay(ctx context.Context, req Request) (*store.ReplayAttempt,
 }
 
 // buildHeaders constructs the outgoing header set: the original captured headers
-// minus hop-by-hop, with signature headers replaced when re-signing.
-func (e *Engine) buildHeaders(req Request) (http.Header, error) {
+// minus hop-by-hop, with signature headers replaced when re-signing. signURL is
+// the URL the signature is bound to (the send target). It returns the effective
+// request URL: empty unless the signer rewrote it (Twilio JSON mode appends
+// bodySHA256), in which case the caller must send to the returned URL.
+func (e *Engine) buildHeaders(req Request, signURL string) (http.Header, string, error) {
 	out := http.Header{}
 	for _, h := range req.Event.Headers {
 		if hopByHop[strings.ToLower(h.Name)] {
@@ -142,23 +153,25 @@ func (e *Engine) buildHeaders(req Request) (http.Header, error) {
 
 	if req.Resign {
 		if req.Secret == "" {
-			return nil, errors.New("replay: re-sign requested but endpoint has no signing secret")
+			return nil, "", errors.New("replay: re-sign requested but endpoint has no signing secret")
 		}
 		res := verify.Sign(verify.SignInput{
 			Provider: req.Provider,
 			Secret:   req.Secret,
 			Body:     req.outgoingBody(),
 			Now:      req.Now,
+			URL:      signURL,
 		})
 		if res.Err != nil {
-			return nil, fmt.Errorf("replay: re-sign: %w", res.Err)
+			return nil, "", fmt.Errorf("replay: re-sign: %w", res.Err)
 		}
 		// Overwrite any original signature headers with the freshly computed ones.
 		for name, val := range res.Headers {
 			out.Set(name, val)
 		}
+		return out, res.URL, nil
 	}
-	return out, nil
+	return out, "", nil
 }
 
 // client builds an http.Client whose dialer re-validates every connection and

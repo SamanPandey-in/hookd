@@ -3,11 +3,16 @@
 import * as React from "react";
 import { ChevronRight, Check, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { writeClipboard } from "@/components/ui/copy-field";
 
 // Pretty JSON viewer (DESIGN §5.1): mono, line numbers, S/N/B field-type
 // markers, collapse carets, copy-path on hover. NO syntax rainbow — keys render
 // in --text, strings in --muted, numbers accent-tinted, nothing else carries
 // color. Captured bodies are inert data: rendered as escaped text, never HTML.
+//
+// Perf (P1-22): a large webhook body can flatten to thousands of nodes. We cap
+// how many rows/lines mount and reveal the rest in chunks on demand, so a huge
+// body never blocks the main thread on first paint. Small bodies are unaffected.
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 
@@ -21,6 +26,10 @@ interface Row {
   summary: string; // shown when a container is collapsed, e.g. "{ 4 }"
   value: Json;
 }
+
+// How many rows/lines mount initially, and how many each "show more" reveals.
+const INITIAL_CAP = 400;
+const CHUNK = 1000;
 
 function typeOf(v: Json): Row["kind"] {
   if (v === null) return "null";
@@ -99,30 +108,75 @@ function ValueText({ row }: { row: Row }) {
   }
 }
 
+/** The "showing N of M — show more" footer for capped bodies. */
+function ShowMore({
+  shown,
+  total,
+  onMore,
+  onAll,
+  unit,
+}: {
+  shown: number;
+  total: number;
+  onMore: () => void;
+  onAll: () => void;
+  unit: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-2">
+      <span className="font-mono text-[11px] text-muted tabular-nums">
+        showing {shown.toLocaleString()} of {total.toLocaleString()} {unit}
+      </span>
+      <button
+        type="button"
+        onClick={onMore}
+        className="font-mono text-[11px] text-text underline-offset-2 hover:underline focus-visible:outline-2 cursor-pointer"
+      >
+        show {Math.min(CHUNK, total - shown).toLocaleString()} more
+      </button>
+      <button
+        type="button"
+        onClick={onAll}
+        className="font-mono text-[11px] text-muted underline-offset-2 hover:underline hover:text-text focus-visible:outline-2 cursor-pointer"
+      >
+        show all
+      </button>
+    </div>
+  );
+}
+
 function RowCopyPath({ path }: { path: string }) {
-  const [copied, setCopied] = React.useState(false);
+  const [state, setState] = React.useState<"idle" | "copied" | "failed">("idle");
   return (
     <button
       type="button"
-      aria-label={`copy path ${path}`}
-      title={`copy path: ${path || "root"}`}
+      aria-label={
+        state === "failed" ? `copy path failed ${path}` : `copy path ${path}`
+      }
+      title={
+        state === "failed"
+          ? "copy failed — select manually"
+          : `copy path: ${path || "root"}`
+      }
       onClick={async (e) => {
         e.stopPropagation();
-        try {
-          await navigator.clipboard.writeText(path);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        } catch {
-          /* clipboard unavailable */
-        }
+        const ok = await writeClipboard(path);
+        setState(ok ? "copied" : "failed");
+        setTimeout(() => setState("idle"), ok ? 1200 : 2400);
       }}
-      className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted opacity-0 transition-opacity duration-[80ms] hover:bg-surface-hi hover:text-text focus-visible:opacity-100 group-hover/row:opacity-100 cursor-pointer"
+      className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted opacity-0 transition-opacity duration-[80ms] hover:bg-surface-hi hover:text-text focus-visible:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100 cursor-pointer"
     >
-      {copied ? (
+      {state === "copied" ? (
         <Check className="h-3 w-3" style={{ color: "var(--pass)" }} />
       ) : (
-        <Link2 className="h-3 w-3" />
+        <Link2
+          className="h-3 w-3"
+          style={state === "failed" ? { color: "var(--fail)" } : undefined}
+        />
       )}
+      <span className="sr-only" role="status" aria-live="polite">
+        {state === "copied" ? "copied" : state === "failed" ? "copy failed" : ""}
+      </span>
     </button>
   );
 }
@@ -144,6 +198,14 @@ export function JSONViewer({
   }, [data]);
 
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
+  const [cap, setCap] = React.useState(INITIAL_CAP);
+
+  // A new body resets the reveal cap so a previously-expanded huge body doesn't
+  // mount thousands of nodes for the next event.
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCap(INITIAL_CAP);
+  }, [data]);
 
   const rows = React.useMemo(() => {
     if (!parsed.ok) return [];
@@ -153,11 +215,13 @@ export function JSONViewer({
   }, [parsed, collapsed]);
 
   if (!parsed.ok) {
-    // Non-JSON body: show the exact bytes as escaped text with line numbers.
+    // Non-JSON body: show the exact bytes as escaped text with line numbers,
+    // capped the same way so a multi-MB payload can't mount all at once.
     const lines = data.split("\n");
+    const shown = lines.slice(0, cap);
     return (
       <div className={cn("overflow-auto font-mono text-xs", className)}>
-        {lines.map((ln, i) => (
+        {shown.map((ln, i) => (
           <div key={i} className="flex">
             <span className="w-10 shrink-0 select-none pr-3 text-right text-muted tabular-nums">
               {i + 1}
@@ -165,6 +229,15 @@ export function JSONViewer({
             <span className="whitespace-pre-wrap break-all text-text">{ln}</span>
           </div>
         ))}
+        {lines.length > cap && (
+          <ShowMore
+            shown={shown.length}
+            total={lines.length}
+            unit="lines"
+            onMore={() => setCap((c) => c + CHUNK)}
+            onAll={() => setCap(lines.length)}
+          />
+        )}
       </div>
     );
   }
@@ -177,9 +250,11 @@ export function JSONViewer({
       return next;
     });
 
+  const visibleRows = rows.slice(0, cap);
+
   return (
     <div className={cn("overflow-auto font-mono text-xs leading-6", className)}>
-      {rows.map((row, i) => (
+      {visibleRows.map((row, i) => (
         <div
           key={row.path || "$root"}
           className="group/row flex items-start hover:bg-surface-hi"
@@ -246,6 +321,15 @@ export function JSONViewer({
           </span>
         </div>
       ))}
+      {rows.length > cap && (
+        <ShowMore
+          shown={visibleRows.length}
+          total={rows.length}
+          unit="rows"
+          onMore={() => setCap((c) => c + CHUNK)}
+          onAll={() => setCap(rows.length)}
+        />
+      )}
     </div>
   );
 }
