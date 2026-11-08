@@ -308,7 +308,7 @@ func (a *API) publishEvent(endpointID string, ev *store.Event) {
 
 func validProvider(p string) bool {
 	switch verify.Provider(p) {
-	case verify.Stripe, verify.GitHub, verify.Razorpay, verify.Shopify, verify.StandardWebhooks, verify.Slack, verify.Twilio, verify.Vercel:
+	case verify.Stripe, verify.GitHub, verify.Razorpay, verify.Shopify, verify.StandardWebhooks, verify.Slack, verify.Twilio, verify.Vercel, verify.LemonSqueezy, verify.Twitch:
 		return true
 	}
 	return false

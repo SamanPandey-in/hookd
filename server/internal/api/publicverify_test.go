@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"whook/internal/httpx"
+	"whook/internal/samples"
 	"whook/internal/store"
 	"whook/internal/verify"
 )
@@ -62,6 +63,84 @@ func TestDebugVerifyValidSamplePasses(t *testing.T) {
 	}
 	if out.Provider != "stripe" {
 		t.Errorf("provider should echo stripe, got %q", out.Provider)
+	}
+}
+
+// TestDebugVerifyEveryProviderPasses is the end-to-end guard that EVERY
+// registered provider verifies as PASS through the public /debug/verify HTTP
+// path, and that a tampered body does not. It loops verify.Providers() so a
+// newly added provider can never silently skip HTTP coverage.
+func TestDebugVerifyEveryProviderPasses(t *testing.T) {
+	h := &PublicVerify{}
+	// A stable external URL — required by Twilio (URL-bound), ignored by the rest.
+	const ingestURL = "https://api.hookd.test/i/ep_e2e"
+	// Standard Webhooks (Svix/Dodo) requires a `whsec_<base64>` secret; others
+	// accept any string.
+	secretFor := func(p verify.Provider) string {
+		if p == verify.StandardWebhooks {
+			return "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"
+		}
+		return "whsec_e2e_all_providers_0001"
+	}
+
+	for _, p := range verify.Default.Providers() {
+		p := p
+		t.Run(string(p), func(t *testing.T) {
+			secret := secretFor(p)
+			smp, ok := samples.For(p)
+			if !ok {
+				t.Fatalf("no sample registered for provider %q", p)
+			}
+			sr := verify.Sign(verify.SignInput{
+				Provider: p, Secret: secret, Body: smp.Body, URL: ingestURL,
+			})
+			if sr.Err != nil {
+				t.Fatalf("sign %s: %v", p, sr.Err)
+			}
+			// Merge the sample's own headers (e.g. Content-Type, which Twilio's
+			// form/JSON mode selection depends on) with the freshly-signed ones.
+			headers := map[string]string{}
+			for k, v := range smp.Headers {
+				headers[k] = v
+			}
+			if smp.ContentType != "" {
+				headers["Content-Type"] = smp.ContentType
+			}
+			for k, v := range sr.Headers {
+				headers[k] = v
+			}
+			// Twilio JSON-mode rewrites the URL (appends bodySHA256); prefer it.
+			effURL := ingestURL
+			if sr.URL != "" {
+				effURL = sr.URL
+			}
+
+			rec := callDebug(h, debugVerifyReq{
+				Provider: string(p), Secret: secret,
+				Headers: headers, Body: string(smp.Body), URL: effURL,
+			})
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s: want 200, got %d %s", p, rec.Code, rec.Body.String())
+			}
+			out := decodeDebug(t, rec)
+			if out.Status != string(verify.Pass) {
+				t.Fatalf("%s: signed sample should PASS over /debug/verify, got status=%s cause=%s summary=%s",
+					p, out.Status, out.Cause, out.Summary)
+			}
+			if out.Provider != string(p) {
+				t.Errorf("%s: provider echo mismatch, got %q", p, out.Provider)
+			}
+
+			// A tampered body must NOT pass.
+			rec2 := callDebug(h, debugVerifyReq{
+				Provider: string(p), Secret: secret,
+				Headers: headers, Body: string(smp.Body) + "!", URL: effURL,
+			})
+			out2 := decodeDebug(t, rec2)
+			if out2.Status == string(verify.Pass) {
+				t.Fatalf("%s: tampered body must not pass", p)
+			}
+		})
 	}
 }
 

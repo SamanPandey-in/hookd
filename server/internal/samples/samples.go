@@ -94,6 +94,32 @@ var table = map[verify.Provider]Sample{
 			`"meta":{"githubCommitRef":"main","githubCommitSha":"a1b2c3d4"}},` +
 			`"project":{"id":"prj_sample0001"},"target":"production"}}`),
 	},
+	verify.LemonSqueezy: {
+		ContentType: "application/json",
+		Headers: map[string]string{
+			"X-Event-Name": "order_created",
+		},
+		Body: []byte(`{"meta":{"event_name":"order_created","custom_data":{"user_id":"user_sample"}},` +
+			`"data":{"type":"orders","id":"sample0001","attributes":{"store_id":1,"identifier":"a1b2c3d4-sample",` +
+			`"order_number":1001,"user_name":"Jon Example","user_email":"jon@example.com","currency":"USD",` +
+			`"total":19900,"total_formatted":"$199.00","status":"paid","refunded":false,` +
+			`"first_order_item":{"product_name":"Pro Plan","variant_name":"Yearly","price":19900}}}}`),
+	},
+	verify.Twitch: {
+		ContentType: "application/json",
+		Headers: map[string]string{
+			"Twitch-Eventsub-Message-Type":         "notification",
+			"Twitch-Eventsub-Subscription-Type":    "channel.follow",
+			"Twitch-Eventsub-Subscription-Version": "2",
+		},
+		Body: []byte(`{"subscription":{"id":"f1a2b3c4-aaaa-bbbb-cccc-1234567890ab","type":"channel.follow",` +
+			`"version":"2","status":"enabled","condition":{"broadcaster_user_id":"12345678"},` +
+			`"transport":{"method":"webhook","callback":"https://api.hookd.dev/i/ep_sample"},` +
+			`"created_at":"2024-01-01T00:00:00Z","cost":0},"event":{"user_id":"98765432",` +
+			`"user_name":"cool_viewer","user_login":"cool_viewer","broadcaster_user_id":"12345678",` +
+			`"broadcaster_user_name":"shipping_streamer","broadcaster_user_login":"shipping_streamer",` +
+			`"followed_at":"2024-01-01T00:00:00Z"}}`),
+	},
 	// Twilio messaging webhook: form-encoded (Content-Type
 	// application/x-www-form-urlencoded), the realistic shape of an inbound SMS.
 	// The "+" in phone numbers is percent-encoded on the wire, exactly as Twilio

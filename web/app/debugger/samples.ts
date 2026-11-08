@@ -88,6 +88,27 @@ export const SAMPLES: Record<Provider, DebugSample> = {
     },
     body: `{"id":"evt_vercel_sample0001","type":"deployment.succeeded","createdAt":1700000000,"region":"iad1","payload":{"team":{"id":"team_sample"},"user":{"id":"user_sample"},"deployment":{"id":"dpl_sample0001","name":"demo-ship","url":"demo-ship-1a2b3c.vercel.app","meta":{"githubCommitRef":"main","githubCommitSha":"a1b2c3d4"}},"project":{"id":"prj_sample0001"},"target":"production"}}`,
   },
+  lemon_squeezy: {
+    provider: "lemon_squeezy",
+    secret: "lemon_whsecret_demo_0001",
+    headers: {
+      "X-Event-Name": "order_created",
+      "Content-Type": "application/json",
+    },
+    body: `{"meta":{"event_name":"order_created","custom_data":{"user_id":"user_sample"}},"data":{"type":"orders","id":"sample0001","attributes":{"store_id":1,"identifier":"a1b2c3d4-sample","order_number":1001,"user_name":"Jon Example","user_email":"jon@example.com","currency":"USD","total":19900,"total_formatted":"$199.00","status":"paid","refunded":false,"first_order_item":{"product_name":"Pro Plan","variant_name":"Yearly","price":19900}}}}`,
+  },
+  twitch: {
+    provider: "twitch",
+    // EventSub subscription secret, used verbatim as the HMAC key.
+    secret: "twitch_eventsub_secret_demo_0001",
+    headers: {
+      "Twitch-Eventsub-Message-Type": "notification",
+      "Twitch-Eventsub-Subscription-Type": "channel.follow",
+      "Twitch-Eventsub-Subscription-Version": "2",
+      "Content-Type": "application/json",
+    },
+    body: `{"subscription":{"id":"f1a2b3c4-aaaa-bbbb-cccc-1234567890ab","type":"channel.follow","version":"2","status":"enabled","condition":{"broadcaster_user_id":"12345678"},"transport":{"method":"webhook","callback":"https://api.hookd.dev/i/ep_sample"},"created_at":"2024-01-01T00:00:00Z","cost":0},"event":{"user_id":"98765432","user_name":"cool_viewer","user_login":"cool_viewer","broadcaster_user_id":"12345678","broadcaster_user_name":"shipping_streamer","broadcaster_user_login":"shipping_streamer","followed_at":"2024-01-01T00:00:00Z"}}`,
+  },
 };
 
 // ---- Web Crypto HMAC helpers (browser + Node 18+ expose globalThis.crypto) --
@@ -212,6 +233,26 @@ export async function signSample(provider: Provider): Promise<{
       // hex HMAC-SHA1 over the raw body (no prefix, no timestamp).
       const hex = toHex(await hmacSha1(enc.encode(s.secret), s.body));
       headers["x-vercel-signature"] = hex;
+      break;
+    }
+    case "lemon_squeezy": {
+      // hex HMAC-SHA256 over the raw body (no prefix, no timestamp).
+      const hex = toHex(await hmacSha256(enc.encode(s.secret), s.body));
+      headers["X-Signature"] = hex;
+      break;
+    }
+    case "twitch": {
+      // sha256=hex(HMAC-SHA256(secret, messageId + timestamp + body)); a fresh
+      // id + current RFC3339 timestamp so it lands inside the 10-minute window.
+      const id =
+        typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `sample-${nowSec}`;
+      const ts = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      const hex = toHex(await hmacSha256(enc.encode(s.secret), `${id}${ts}${s.body}`));
+      headers["Twitch-Eventsub-Message-Id"] = id;
+      headers["Twitch-Eventsub-Message-Timestamp"] = ts;
+      headers["Twitch-Eventsub-Message-Signature"] = `sha256=${hex}`;
       break;
     }
   }

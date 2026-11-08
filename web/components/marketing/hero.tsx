@@ -4,13 +4,13 @@ import { Section } from "@/components/marketing/section";
 import { LiveInspectorDemo } from "@/components/marketing/live-inspector-demo";
 
 // Proof row (DESIGN §5.2): honest, defensible claims — not logos, not invented
-// stats. Numbers that are true today: eight providers shipped, one-click replay,
+// stats. Numbers that are true today: ten providers shipped, one-click replay,
 // sub-second live capture (PRODUCT F1 acceptance). Separated by hairlines, not
 // decorative middle-dots.
 const PROOF = [
   { value: "<1s", label: "live capture" },
   { value: "1-click", label: "re-signed replay" },
-  { value: "8", label: "providers verified" },
+  { value: "10", label: "providers verified" },
 ];
 
 export function Hero() {
@@ -27,7 +27,7 @@ export function Hero() {
           <span className="text-border">/</span>
           <span className="text-text/85">POST&nbsp;/i/ep_7fa2</span>
           <span className="text-border">/</span>
-          <span>8 providers</span>
+          <span>10 providers</span>
         </div>
 
         <h1 className="font-sans text-[2.7rem] font-semibold leading-[1.01] tracking-[-0.022em] text-text sm:text-6xl">

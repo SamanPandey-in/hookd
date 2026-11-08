@@ -17,6 +17,11 @@ export const PROVIDER_META: Record<
   slack: { label: "Slack", signatureHeader: "X-Slack-Signature" },
   twilio: { label: "Twilio", signatureHeader: "X-Twilio-Signature" },
   vercel: { label: "Vercel", signatureHeader: "x-vercel-signature" },
+  lemon_squeezy: { label: "Lemon Squeezy", signatureHeader: "X-Signature" },
+  twitch: {
+    label: "Twitch",
+    signatureHeader: "Twitch-Eventsub-Message-Signature",
+  },
 };
 
 export function providerLabel(p: Provider | "" | undefined): string {
@@ -40,6 +45,10 @@ export const SIGNATURE_HEADERS = new Set(
     "x-slack-request-timestamp",
     "x-twilio-signature",
     "x-vercel-signature",
+    "x-signature",
+    "twitch-eventsub-message-signature",
+    "twitch-eventsub-message-id",
+    "twitch-eventsub-message-timestamp",
   ].map((s) => s.toLowerCase()),
 );
 
@@ -78,6 +87,8 @@ const PROVIDER_ENCODING: Partial<Record<Provider, "hex" | "base64">> = {
   standard_webhooks: "base64",
   twilio: "base64", // base64 HMAC-SHA1 over the URL
   vercel: "hex", // hex HMAC-SHA1 over the raw body
+  lemon_squeezy: "hex", // hex HMAC-SHA256 over the raw body
+  twitch: "hex", // hex HMAC-SHA256 over id+timestamp+body, "sha256=" prefix
 };
 
 const d = (det: Details, k: string): string | undefined => {
@@ -129,7 +140,7 @@ export const CAUSE_FIX: Record<
     const expectedTxt = expected ?? "its canonical encoding";
     return `the digest is correct but encoded as ${wrong}; ${fixWho(
       provider,
-    )} expects ${expectedTxt}. Decode/encode accordingly (Shopify, Standard Webhooks & Twilio = base64; Stripe, GitHub, Razorpay, Slack & Vercel = hex).`;
+    )} expects ${expectedTxt}. Decode/encode accordingly (Shopify, Standard Webhooks & Twilio = base64; Stripe, GitHub, Razorpay, Slack, Vercel, Lemon Squeezy & Twitch = hex).`;
   },
 
   body_possibly_altered: (det) => {

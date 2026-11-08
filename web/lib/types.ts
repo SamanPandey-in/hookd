@@ -11,7 +11,9 @@ export type Provider =
   | "standard_webhooks"
   | "slack"
   | "twilio"
-  | "vercel";
+  | "vercel"
+  | "lemon_squeezy"
+  | "twitch";
 
 export const PROVIDERS: Provider[] = [
   "stripe",
@@ -22,6 +24,8 @@ export const PROVIDERS: Provider[] = [
   "slack",
   "twilio",
   "vercel",
+  "lemon_squeezy",
+  "twitch",
 ];
 
 /** Top-level signature verification outcome (verify.Status). */

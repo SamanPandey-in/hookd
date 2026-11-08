@@ -35,6 +35,8 @@ const (
 	Slack            Provider = "slack"             // X-Slack-Signature: "v0=" HMAC-SHA256 over "v0:ts:body", hex; X-Slack-Request-Timestamp
 	Twilio           Provider = "twilio"            // X-Twilio-Signature: base64 HMAC-SHA1 over the request URL (+ sorted form params, or +bodySHA256 for JSON)
 	Vercel           Provider = "vercel"            // x-vercel-signature: HMAC-SHA1 over the raw body, hex (no prefix, no timestamp)
+	LemonSqueezy     Provider = "lemon_squeezy"     // X-Signature: HMAC-SHA256 over the raw body, hex (no prefix, no timestamp)
+	Twitch           Provider = "twitch"            // Twitch-Eventsub-Message-Signature: "sha256=" HMAC-SHA256 over id+timestamp+body, hex; timestamp-tolerant
 )
 
 // Status is the top-level verification outcome.
@@ -182,6 +184,15 @@ func Detect(h http.Header) (Provider, bool) {
 		return Twilio, true
 	case h.Get("x-vercel-signature") != "":
 		return Vercel, true
+	case h.Get("Twitch-Eventsub-Message-Signature") != "":
+		// Twitch's lone, single-purpose signature header — unique among all
+		// providers (and distinct from the generic Webhook-* set below).
+		return Twitch, true
+	case h.Get("X-Signature") != "":
+		// Lemon Squeezy's lone, single-purpose header. Distinct from every other
+		// provider above (and from the generic Webhook-* set below), so a bare
+		// X-Signature unambiguously identifies Lemon Squeezy.
+		return LemonSqueezy, true
 	case h.Get("Webhook-Signature") != "" && h.Get("Webhook-Id") != "" && h.Get("Webhook-Timestamp") != "":
 		return StandardWebhooks, true
 	}

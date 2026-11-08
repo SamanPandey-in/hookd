@@ -158,7 +158,7 @@ GitHub-OAuth cookie instead; agents should use an API key.)
 
 ## core concepts
 - endpoint: a stable destination with its own ingest url. Optional provider
-  (stripe | github | razorpay | shopify | standard_webhooks | slack | twilio | vercel | "" = auto-detect;
+  (stripe | github | razorpay | shopify | standard_webhooks | slack | twilio | vercel | lemon_squeezy | twitch | "" = auto-detect;
   standard_webhooks is the Svix/Dodo spec; twilio's signature is bound to the
   request URL, not just the body) and
   an optional signing secret.
