@@ -1,4 +1,4 @@
-# AGENTS.md — Webhook Debugger (Weekly Ship #2)
+# AGENTS.md — hookd (Webhook Debugger)
 
 > Operating manual for every agent (and human) working in this repo.
 > Read this **first**, then `docs/PLAN.md`, `docs/PRODUCT.md`, `docs/DESIGN.md`.
@@ -8,7 +8,7 @@
 
 ## 0. Mission & constraints (non-negotiable)
 
-- This is **Weekly Ship product #2**: a **paid** ($9–19/mo) webhook debugging tool. Goal = **first revenue** + a demo GIF that spreads on X.
+- hookd is a **paid** ($9–19/mo) webhook debugging tool. Goal = **first paying customers**.
 - **Ship date: 2026-11-19.** Cadence beats polish. **Cut scope, never the date.** If something threatens the date, flag it in `docs/PLAN.md` and the handoff *immediately*.
 - Every shippable surface must be **demo-GIF-worthy**: the live inspector must look sharp and feel *alive* (webhooks landing in real time is the money shot).
 - The product takes **untrusted input from the public internet** (that's literally the feature). Security is a feature, not an afterthought — see §6.

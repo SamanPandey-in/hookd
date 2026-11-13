@@ -14,7 +14,7 @@ Point any provider at a stable ingest URL, watch requests land live, and when ve
 
 Every webhook integration hits the same wall: *"why is my signature verification failing?"* Free tools (webhook.site, RequestBin, smee) capture requests but never verify them. Production platforms (Hookdeck, Svix) verify but are priced for scale, not a dev at 2am. **hookd owns the gap: dev-time verify-*explain* + re-signed replay, at an indie price.**
 
-- **Verify with a reason, not a red dot** — `signature_mismatch` because the body bytes differ from what was signed; timestamp outside tolerance (stale/replayed); encoding mismatch. Across **Stripe, GitHub, Razorpay, Shopify, Standard Webhooks (Svix/Dodo) and Slack**.
+- **Verify with a reason, not a red dot** — `signature_mismatch` because the body bytes differ from what was signed; timestamp outside tolerance (stale/replayed); encoding mismatch. Across **Stripe, GitHub, Razorpay, Shopify, Slack, Standard Webhooks (Svix/Dodo), Twilio, Vercel, Lemon Squeezy and Twitch**.
 - **Replay, re-signed** — re-send any captured event to your local tunnel or staging, optionally minting a fresh signature + timestamp from your secret so the receiver accepts it as genuine.
 - **Live inspector** — requests stream in over SSE with an arrival pulse; headers (order preserved), pretty/raw body, and every replay attempt with status + latency.
 - **REST API + agent-ready** — drive everything over HTTP with an API key; the in-app docs include a one-click **"copy for agents"** brief (MCP server planned).
@@ -121,9 +121,3 @@ accent — signal-lime `#B8FF2E` — reserved for the verify **PASS** state and 
 new-webhook arrival pulse. Mono-dominant (Commit Mono) + Hanken Grotesk, hairlines over
 shadows. Full checklist in `docs/DESIGN.md`. Six built-in themes (hookd, hookd-light,
 Dracula, Nord, Tokyo Night, Catppuccin), switchable in-app.
-
----
-
-<div align="center">
-<sub>Part of a <b>weekly ship</b> — one product shipped every week through 2026. Product #2: the first paid one.</sub>
-</div>

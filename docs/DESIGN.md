@@ -1,4 +1,4 @@
-# DESIGN.md — Webhook Debugger (Weekly Ship #2)
+# DESIGN.md — hookd (Webhook Debugger)
 
 > The UI/UX source of truth. Distilled from `research/ui-inspiration.md` into buildable tokens +
 > screen specs. Where this file is specific, it **wins** over any skill's default. Dark‑mode‑first,
@@ -99,7 +99,7 @@ Two‑pane; top command bar.
 │   from stripe, razorpay, github & more.       │   SIGNATURE   ✓ VERIFIED      │ │   actually
 │   [ start free ]   [ live demo ]              │   { "amount": 2000, … }       │ │   animating
 │   no card. point a webhook and watch.         └───────────────────────────────┘ │
-│   ──  94ms p50 ingest · replay in 1 click · 6 providers verified  ──            │  proof row
+│   ──  94ms p50 ingest · replay in 1 click · 10 providers verified  ──           │  proof row
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 - Hero = the **actual inspector animating** a looping capture → verify → replay (beats Hookdeck, which hides its UI). Proof row = real numbers, not logos.

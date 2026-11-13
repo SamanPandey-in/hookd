@@ -17,7 +17,7 @@ except F4 (flagged). Filter for every decision: **does it (a) show something no 
 |---|---------|-----------|--------------|----------|-------------|
 | **F1** | Fix-it guidance | Verify panel doesn't just say *what* failed — it says *how to fix it* | Frontend | "timestamp skew 340s → event is stale/replayed; Stripe tolerance is 300s" appears under FAILED | deepens the only reason to use hookd |
 | **F2** | Replay-with-edit | Edit a captured payload, re-sign it, replay to your handler | Backend + frontend | change `amount` → replay → your handler verifies the forged-but-valid event | the clearest "take my $12" power feature |
-| **F3** | Public signature debugger | Free, no-signup page: paste secret + raw request → *why it won't verify* | Backend + marketing | the viral on-ramp / SEO magnet, funnels to signup | top-of-funnel reach play |
+| **F3** | Public signature debugger | Free, no-signup page: paste secret + raw request → *why it won't verify* | Backend + marketing | the viral on-ramp / SEO magnet, funnels to signup | top-of-funnel growth play |
 | **F4** | CLI localhost forwarder | `npx hookd listen <endpoint> --forward localhost:3000` | New CLI + 1 backend route change | real Stripe event → your localhost handler, re-signed so verification passes | closes the #1 competitive gap (ngrok/Hookdeck own this) |
 
 **F4 is the scope risk.** It reopens the locked "no CLI in v1" decision and is the only feature with

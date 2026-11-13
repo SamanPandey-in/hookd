@@ -40,7 +40,7 @@ Concretely, win on the three things free tools skip and heavy tools bury:
 
 **Secondary moats:** privacy framing (ephemeral/private endpoints; optional self-host) answers the "I won't send PII to a hosted box" objection; multi-provider breadth answers Stripe-CLI's single-provider limit.
 
-**What NOT to chase:** at-scale production delivery/queuing (Hookdeck/Svix/Convoy's turf, millions of events, "needs real infra") — out of our ICP and a pricing/engineering trap for a weekly ship.
+**What NOT to chase:** at-scale production delivery/queuing (Hookdeck/Svix/Convoy's turf, millions of events, "needs real infra") — out of our ICP and a pricing/engineering trap for an indie product.
 
 ---
 

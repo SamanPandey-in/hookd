@@ -1,8 +1,8 @@
-# PLAN.md — Webhook Debugger (Weekly Ship #2)
+# PLAN.md — hookd (Webhook Debugger)
 
 **Target:** a **paid**, live, public webhook debugging tool. Capture → inspect → **verify signatures + explain why** → replay/re‑sign to a target URL. First‑revenue product.
-**Due:** weekly‑ship slot **2026‑11‑19**. Realistic focused build window ≈ 6 working days (Phase 0 de‑risk can run in parallel with RepoMap *now*; full build starts when RepoMap ships ~Nov 12).
-**Builder:** all coding + testing by Claude + subagents. User provides: decisions, accounts/keys, deploy approval, and does the X posting.
+**Target launch:** **2026‑11‑19**. Realistic focused build window ≈ 6 working days.
+**Builder:** all coding + testing by Claude + subagents. User provides: decisions, accounts/keys, and deploy approval.
 **Read first:** `AGENTS.md` (rules), `PRODUCT.md` (what/why), `DESIGN.md` (how it looks).
 
 ---
@@ -78,7 +78,7 @@ Build to `DESIGN.md` ("Graphite & Signal"). Can start against mocked data in par
 - **Done when:** public URL works from a clean browser; a real Stripe test webhook is captured + verified + replayed live; no secret leaks in logs.
 
 ## Phase 4.5 — Launch assets
-- **Demo GIF** leading with the **signature‑verify moment** + a webhook landing live + a 1‑click replay. (This is the whole reach play.)
+- **Demo GIF** leading with the **signature‑verify moment** + a webhook landing live + a 1‑click replay.
 - Landing copy final; run `landing-page-conversion-audit`. **WTP smoke test:** a Dodo payment link / pre‑order CTA.
 - X post + thread (pain → GIF → link → price), README with GIF, OG image, favicon.
 - **Done when:** GIF + post drafted, link live, pre‑order path works. **User posts.**

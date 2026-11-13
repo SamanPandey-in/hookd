@@ -1,4 +1,4 @@
-# PRODUCT.md — Webhook Debugger (Weekly Ship #2)
+# PRODUCT.md — hookd (Webhook Debugger)
 
 > Product requirements, grounded in `docs/research/`. Working name only — functionality and UI
 > quality are what matter, not branding. **Target ship: 2026-11-19.**
