@@ -116,6 +116,11 @@ func (h *Handler) runVerify(ctx context.Context, ep *store.Endpoint, hdr http.He
 		ev.VerifySummary = "no provider configured or detected"
 		return
 	}
+	// Persist the resolved/detected provider so the inspector shows what actually
+	// verified, not the endpoint's configured (possibly auto-detect) provider.
+	// Set once here so every branch below (missing-secret, decrypt-fail, verified)
+	// carries it; after verify.Verify, res.Provider equals this input provider.
+	ev.VerifyProvider = string(provider)
 
 	encSecret, err := h.store.GetEndpointSecret(ctx, ep.ID)
 	if err != nil || len(encSecret) == 0 {

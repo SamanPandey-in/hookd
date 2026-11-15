@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { runListen } from './listen.js';
 
-const DEFAULT_API = 'http://localhost:8099';
+const DEFAULT_API = 'https://api.hookd.dev';
 
 function version() {
   try {

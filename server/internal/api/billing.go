@@ -25,8 +25,8 @@ import (
 // with our OWN verify engine (verify.StandardWebhooks) — dogfooding the product.
 type Billing struct {
 	Store       store.Store
-	Dodo        dodo.Client   // nil when DODO_API_KEY is unset (billing not configured)
-	Email       email.Sender  // transactional sender; inert (no-op) unless SMTP configured
+	Dodo        dodo.Client  // nil when DODO_API_KEY is unset (billing not configured)
+	Email       email.Sender // transactional sender; inert (no-op) unless SMTP configured
 	MaxJSONBody int64
 
 	WebhookSecret  string // DODO_WEBHOOK_SECRET; "" => /webhooks/dodo returns 503

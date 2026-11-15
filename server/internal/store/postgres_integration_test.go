@@ -56,18 +56,19 @@ func TestPGFullFlow(t *testing.T) {
 	}
 
 	ev := &Event{
-		EndpointID:    ep.ID,
-		Method:        "POST",
-		Path:          "/i/" + ep.ID,
-		Query:         "a=1",
-		Headers:       []HeaderPair{{Name: "X-Dup", Value: "1"}, {Name: "X-Dup", Value: "2"}},
-		RawBody:       []byte(`{"needle":true}`),
-		Size:          15,
-		ContentType:   "application/json",
-		ReceivedAtMS:  time.Now().UnixMilli(),
-		VerifyStatus:  "pass",
-		VerifyCause:   "ok",
-		VerifyDetails: map[string]string{"scheme": "v1"},
+		EndpointID:     ep.ID,
+		Method:         "POST",
+		Path:           "/i/" + ep.ID,
+		Query:          "a=1",
+		Headers:        []HeaderPair{{Name: "X-Dup", Value: "1"}, {Name: "X-Dup", Value: "2"}},
+		RawBody:        []byte(`{"needle":true}`),
+		Size:           15,
+		ContentType:    "application/json",
+		ReceivedAtMS:   time.Now().UnixMilli(),
+		VerifyStatus:   "pass",
+		VerifyCause:    "ok",
+		VerifyDetails:  map[string]string{"scheme": "v1"},
+		VerifyProvider: "github",
 	}
 	if err := pg.CreateEvent(ctx, ev); err != nil {
 		t.Fatalf("create event: %v", err)
@@ -82,6 +83,9 @@ func TestPGFullFlow(t *testing.T) {
 	}
 	if len(got.Headers) != 2 {
 		t.Errorf("headers/dupes not preserved: %+v", got.Headers)
+	}
+	if got.VerifyProvider != "github" {
+		t.Errorf("verify_provider not persisted: %q", got.VerifyProvider)
 	}
 
 	// Text search.

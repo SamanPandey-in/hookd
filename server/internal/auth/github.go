@@ -220,8 +220,8 @@ func (h *Handlers) Me(w http.ResponseWriter, r *http.Request) {
 		"created_at_ms": u.CreatedAt.UnixMilli(),
 		// theme is the account-synced appearance preference; "" means the client
 		// uses its own default/system choice (see PUT /api/account/theme).
-		"theme":        u.Theme,
-		"plan":         userPlan, "subscription": subscription,
+		"theme": u.Theme,
+		"plan":  userPlan, "subscription": subscription,
 		// The gating matrix the client renders walls off. Server-authoritative
 		// (plan.go is the single source of truth); the UI never hardcodes caps,
 		// so free's endpoint cap and retention ceiling can't drift from what the

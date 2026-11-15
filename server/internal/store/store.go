@@ -123,6 +123,11 @@ type Event struct {
 	VerifyCause   string            `json:"verify_cause"`
 	VerifySummary string            `json:"verify_summary"`
 	VerifyDetails map[string]string `json:"verify_details"`
+	// VerifyProvider is the provider the engine actually resolved/detected for
+	// this capture (e.g. "github" from X-Hub-Signature-256), or "" when none was
+	// resolved. Distinct from the endpoint's configured provider, which may be
+	// auto-detect. Treated as inert text.
+	VerifyProvider string `json:"verify_provider"`
 }
 
 // RetentionTarget is what the retention purger needs to know about one endpoint:

@@ -10,8 +10,9 @@ const twilioToken = "12345"
 // RequestValidator tests). We set the PUBLISHED X-Twilio-Signature and require a
 // PASS, so the test can only succeed if our construction reproduces Twilio's own
 // output byte-for-byte — a round-trip sign→verify alone would not prove that.
-//   token "12345", URL "https://mycompany.com/myapp.php?foo=1&bar=2"
-//   params CallSid, Caller, Digits, From, To  =>  "RSOYDt4T1cUTdK1PDd93/VVr8B8="
+//
+//	token "12345", URL "https://mycompany.com/myapp.php?foo=1&bar=2"
+//	params CallSid, Caller, Digits, From, To  =>  "RSOYDt4T1cUTdK1PDd93/VVr8B8="
 func TestTwilio_OfficialVector_Form(t *testing.T) {
 	const (
 		fullURL  = "https://mycompany.com/myapp.php?foo=1&bar=2"
@@ -53,8 +54,9 @@ func TestTwilio_OfficialVector_BodyHash(t *testing.T) {
 
 // TestTwilio_OfficialVector_JSON validates the JSON (bodySHA256) scheme against
 // Twilio's published signature for the URL-with-bodySHA256.
-//   URL "...&bodySHA256=0a1ff…6620", body {"property":"value","boolean":true}
-//   => "a9nBmqA0ju/hNViExpshrM61xv4="
+//
+//	URL "...&bodySHA256=0a1ff…6620", body {"property":"value","boolean":true}
+//	=> "a9nBmqA0ju/hNViExpshrM61xv4="
 func TestTwilio_OfficialVector_JSON(t *testing.T) {
 	const (
 		fullURL = "https://mycompany.com/myapp.php?foo=1&bar=2" +

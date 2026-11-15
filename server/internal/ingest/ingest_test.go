@@ -133,6 +133,35 @@ func TestCaptureTwilioVerifiesWithForwardedURL(t *testing.T) {
 		t.Fatalf("Twilio capture should verify PASS, got status=%q cause=%q summary=%q",
 			evs[0].VerifyStatus, evs[0].VerifyCause, evs[0].VerifySummary)
 	}
+	if evs[0].VerifyProvider != "twilio" {
+		t.Fatalf("capture should persist resolved provider, got verify_provider=%q", evs[0].VerifyProvider)
+	}
+}
+
+// TestCaptureAutoDetectPersistsVerifyProvider proves that when the endpoint is
+// configured for auto-detect (empty provider), the provider the engine actually
+// detects (GitHub, from X-Hub-Signature-256) is persisted on the event as
+// verify_provider — the U-4 contract the inspector reads.
+func TestCaptureAutoDetectPersistsVerifyProvider(t *testing.T) {
+	h, st, _ := testHandler(t)
+	ep := &store.Endpoint{OwnerID: 1, Provider: ""} // auto-detect
+	if err := st.CreateEndpoint(context.Background(), ep); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/i/"+ep.ID, strings.NewReader(`{"ok":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", "sha256=deadbeef")
+	rec := httptest.NewRecorder()
+	router(h).ServeHTTP(rec, req)
+
+	evs, _ := st.ListEvents(context.Background(), ep.ID, store.EventFilter{})
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 stored event, got %d", len(evs))
+	}
+	if evs[0].VerifyProvider != "github" {
+		t.Fatalf("auto-detected capture should persist verify_provider=github, got %q", evs[0].VerifyProvider)
+	}
 }
 
 func TestCaptureUnknownEndpoint404(t *testing.T) {

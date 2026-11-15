@@ -241,15 +241,16 @@ func (a *API) SendSample(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ev := &store.Event{
-		EndpointID:   ep.ID,
-		Method:       http.MethodPost,
-		Path:         "/i/" + ep.ID,
-		Headers:      headers,
-		RawBody:      sample.Body,
-		Size:         len(sample.Body),
-		ContentType:  sample.ContentType,
-		SourceIP:     "sample",
-		ReceivedAtMS: time.Now().UnixMilli(),
+		EndpointID:     ep.ID,
+		Method:         http.MethodPost,
+		Path:           "/i/" + ep.ID,
+		Headers:        headers,
+		RawBody:        sample.Body,
+		Size:           len(sample.Body),
+		ContentType:    sample.ContentType,
+		SourceIP:       "sample",
+		ReceivedAtMS:   time.Now().UnixMilli(),
+		VerifyProvider: string(provider),
 	}
 	// Label the synthetic event exactly as a real capture would be (e.g. the
 	// sample's top-level "type" or its provider header like X-Shopify-Topic).

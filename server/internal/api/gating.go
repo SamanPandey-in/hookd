@@ -40,6 +40,10 @@ func eventListView(ev *store.Event, pro bool) map[string]any {
 		"source_ip":      ev.SourceIP,
 		"received_at_ms": ev.ReceivedAtMS,
 		"verify_status":  ev.VerifyStatus,
+		// The detected/resolved provider is benign metadata (not the paid "why"),
+		// so it is always visible — the inspector shows it even for free users and
+		// even when the endpoint itself is on auto-detect.
+		"verify_provider": ev.VerifyProvider,
 	}
 	if pro {
 		m["verify_cause"] = ev.VerifyCause

@@ -339,10 +339,10 @@ func (p *Postgres) CreateEvent(ctx context.Context, ev *Event) error {
 	}
 	_, err = p.pool.Exec(ctx, `
 		INSERT INTO events (id, endpoint_id, method, path, query, headers, raw_body, size,
-			content_type, source_ip, received_at_ms, verify_status, verify_cause, verify_summary, verify_details, event_type)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+			content_type, source_ip, received_at_ms, verify_status, verify_cause, verify_summary, verify_details, event_type, verify_provider)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		ev.ID, ev.EndpointID, ev.Method, ev.Path, ev.Query, hdrs, ev.RawBody, ev.Size,
-		ev.ContentType, ev.SourceIP, ev.ReceivedAtMS, ev.VerifyStatus, ev.VerifyCause, ev.VerifySummary, details, ev.EventType)
+		ev.ContentType, ev.SourceIP, ev.ReceivedAtMS, ev.VerifyStatus, ev.VerifyCause, ev.VerifySummary, details, ev.EventType, ev.VerifyProvider)
 	if err != nil {
 		return fmt.Errorf("store: create event: %w", err)
 	}
@@ -360,11 +360,11 @@ func (p *Postgres) scanEventWhere(ctx context.Context, where string, args ...any
 		details []byte
 	)
 	q := `SELECT id, endpoint_id, method, path, query, headers, raw_body, size,
-		content_type, source_ip, received_at_ms, verify_status, verify_cause, verify_summary, verify_details, event_type
+		content_type, source_ip, received_at_ms, verify_status, verify_cause, verify_summary, verify_details, event_type, verify_provider
 		FROM events WHERE ` + where
 	err := p.pool.QueryRow(ctx, q, args...).Scan(
 		&ev.ID, &ev.EndpointID, &ev.Method, &ev.Path, &ev.Query, &hdrs, &ev.RawBody, &ev.Size,
-		&ev.ContentType, &ev.SourceIP, &ev.ReceivedAtMS, &ev.VerifyStatus, &ev.VerifyCause, &ev.VerifySummary, &details, &ev.EventType)
+		&ev.ContentType, &ev.SourceIP, &ev.ReceivedAtMS, &ev.VerifyStatus, &ev.VerifyCause, &ev.VerifySummary, &details, &ev.EventType, &ev.VerifyProvider)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -407,7 +407,7 @@ func (p *Postgres) ListEvents(ctx context.Context, endpointID string, f EventFil
 	}
 	args = append(args, limit)
 	q := `SELECT id, endpoint_id, method, path, query, headers, raw_body, size,
-		content_type, source_ip, received_at_ms, verify_status, verify_cause, verify_summary, verify_details, event_type
+		content_type, source_ip, received_at_ms, verify_status, verify_cause, verify_summary, verify_details, event_type, verify_provider
 		FROM events WHERE ` + strings.Join(conds, " AND ") +
 		fmt.Sprintf(" ORDER BY received_at_ms DESC LIMIT $%d", len(args))
 
@@ -424,7 +424,7 @@ func (p *Postgres) ListEvents(ctx context.Context, endpointID string, f EventFil
 			details []byte
 		)
 		if err := rows.Scan(&ev.ID, &ev.EndpointID, &ev.Method, &ev.Path, &ev.Query, &hdrs, &ev.RawBody, &ev.Size,
-			&ev.ContentType, &ev.SourceIP, &ev.ReceivedAtMS, &ev.VerifyStatus, &ev.VerifyCause, &ev.VerifySummary, &details, &ev.EventType); err != nil {
+			&ev.ContentType, &ev.SourceIP, &ev.ReceivedAtMS, &ev.VerifyStatus, &ev.VerifyCause, &ev.VerifySummary, &details, &ev.EventType, &ev.VerifyProvider); err != nil {
 			return nil, fmt.Errorf("store: scan event: %w", err)
 		}
 		if err := json.Unmarshal(hdrs, &ev.Headers); err != nil {
