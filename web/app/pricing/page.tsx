@@ -6,7 +6,7 @@ import { PricingPlans } from "@/components/marketing/pricing-plans";
 import { Faq } from "@/components/marketing/faq";
 
 export const metadata: Metadata = {
-  title: "Pricing",
+  title: "pricing",
   description:
     "Free vs Pro. A free tier that actually works — stable ingest url, live capture, basic verify — and Pro at $12/mo (or $9/mo yearly) for verify-explain, replay, retention and sharing. Billed via Dodo Payments.",
 };

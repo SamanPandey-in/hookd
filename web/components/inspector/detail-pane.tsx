@@ -4,7 +4,7 @@ import * as React from "react";
 import { RotateCw, Share2, Download, Check } from "lucide-react";
 import { cn, absoluteTime, formatBytes } from "@/lib/utils";
 import { events as eventsApi, ingestURL, API_URL, isUpgradeRequired } from "@/lib/api";
-import type { Endpoint, EventDetail, ReplayAttempt } from "@/lib/types";
+import type { Endpoint, EventDetail, Provider, ReplayAttempt } from "@/lib/types";
 import { FieldLabel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-field";
@@ -20,10 +20,10 @@ import { deriveEventType, buildCurl } from "@/components/inspector/derive";
 
 export type DetailTab = "headers" | "body" | "attempts" | "curl";
 export const DETAIL_TABS: { id: DetailTab; label: string }[] = [
-  { id: "headers", label: "Headers" },
-  { id: "body", label: "Body" },
-  { id: "attempts", label: "Attempts" },
-  { id: "curl", label: "cURL" },
+  { id: "headers", label: "headers" },
+  { id: "body", label: "body" },
+  { id: "attempts", label: "attempts" },
+  { id: "curl", label: "curl" },
 ];
 
 export function DetailPane({
@@ -99,7 +99,14 @@ export function DetailPane({
             cause={detail.verify_cause}
             summary={detail.verify_summary}
             details={detail.verify_details}
-            provider={endpoint?.provider ?? ""}
+            // Prefer the provider the verify engine actually resolved for this
+            // event (auto-detect); fall back to the endpoint's configured one
+            // for older events that predate the field (U-4).
+            provider={
+              (detail.verify_provider || endpoint?.provider || "") as
+                | Provider
+                | ""
+            }
             lockedWhy={!isPro}
           />
         </div>
@@ -111,6 +118,7 @@ export function DetailPane({
                 ref={replayRef}
                 eventId={detail.id}
                 endpoint={endpoint}
+                verifyStatus={detail.verify_status}
                 onReplayed={onReplayed}
                 locked={!isPro}
               />
@@ -176,7 +184,11 @@ function DetailHeader({
     setShareUpgrade(false);
     try {
       const res = await eventsApi.share(detail.id);
-      const url = `${API_URL}${res.path}`;
+      // The read-only share page is served by THIS web app at res.path
+      // (/share/<token>), not by the backend API — build the link from the web
+      // origin so a teammate opens the rendered page, not raw JSON (U-1). Safe
+      // to read window here: this only runs from a click handler.
+      const url = `${window.location.origin}${res.path}`;
       setShared(url);
       try {
         await navigator.clipboard.writeText(url);

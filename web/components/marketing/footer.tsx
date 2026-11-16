@@ -65,7 +65,7 @@ export function MarketingFooter() {
             ))}
           </nav>
           <p className="font-mono text-[11px] text-muted">
-            built in public · week 2 of weekly-ship
+            © 2026 hookd
           </p>
         </div>
       </div>

@@ -87,6 +87,11 @@ export interface EventSummary {
   verify_cause: VerifyCause;
   verify_summary: string;
   verify_details: Record<string, string> | null;
+  /** The provider the verify engine actually resolved for this event (e.g.
+   *  "github" when auto-detect matched it), or "" when none was resolved. Shown
+   *  in the verify panel in preference to the endpoint's configured provider so
+   *  a detected scheme isn't mislabelled. Older events may omit it. */
+  verify_provider?: string;
 }
 
 /** Full event detail (adds decoded + base64 body). */

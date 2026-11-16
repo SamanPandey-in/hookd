@@ -4,7 +4,7 @@ import { MarketingFooter } from "@/components/marketing/footer";
 import { DocsContent } from "@/app/docs/docs-content";
 
 export const metadata: Metadata = {
-  title: "Docs — getting started",
+  title: "docs — getting started",
   description:
     "Capture, inspect, verify and replay webhooks with hookd. Point a webhook at a stable ingest url, read the inspector, verify signatures with the reason (not just a red dot), and replay re-signed. Plus the REST API and an agent brief.",
 };

@@ -5,9 +5,9 @@ import { Section, SectionHeading } from "@/components/marketing/section";
 import { DebuggerClient } from "@/app/debugger/debugger-client";
 
 export const metadata: Metadata = {
-  title: "Signature debugger",
+  title: "signature debugger",
   description:
-    "Free, no-signup webhook signature debugger. Paste a secret + the raw request and find out exactly why the signature won't verify — timestamp skew, wrong secret, hex-vs-base64, or a body a middleware re-serialized. Stripe, GitHub, Shopify, Razorpay, Slack and Standard Webhooks.",
+    "Free, no-signup webhook signature debugger. Paste a secret + the raw request and find out exactly why the signature won't verify — timestamp skew, wrong secret, hex-vs-base64, or a body a middleware re-serialized. Stripe, GitHub, Razorpay, Shopify, Slack, Standard Webhooks (Svix/Dodo), Twilio, Vercel, Lemon Squeezy and Twitch.",
 };
 
 // F3 — the public on-ramp (IMPR_PLAN §6.F3). Standalone marketing-style page,

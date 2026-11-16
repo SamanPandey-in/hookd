@@ -32,6 +32,7 @@ import {
   EmptyState,
 } from "@/components/ui/states";
 import { StreamRow } from "@/components/inspector/stream-row";
+import { SampleSender } from "@/components/ui/sample-sender";
 import {
   DetailPane,
   type DetailTab,
@@ -84,10 +85,6 @@ export default function InspectorPage() {
   // not "paused").
   const [liveAnnounce, setLiveAnnounce] = React.useState("");
   const [everConnected, setEverConnected] = React.useState(false);
-
-  // One-click sample from the waiting empty state (P1-15).
-  const [sampleBusy, setSampleBusy] = React.useState(false);
-  const [sampleErr, setSampleErr] = React.useState<string | null>(null);
 
   const [details, setDetails] = React.useState<Record<string, EventDetail>>({});
   const [attempts, setAttempts] = React.useState<Record<string, ReplayAttempt[]>>({});
@@ -165,23 +162,6 @@ export default function InspectorPage() {
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [stream.status, everConnected, loadEvents]);
-
-  const sendSample = React.useCallback(async () => {
-    if (sampleBusy) return;
-    setSampleBusy(true);
-    setSampleErr(null);
-    try {
-      // No provider → the backend sends a generic sample, so this works for
-      // auto-detect endpoints too. The live feed delivers it; reload as a
-      // fallback in case the stream is momentarily down.
-      await endpointsApi.sendSample(id);
-      await loadEvents();
-    } catch (e) {
-      setSampleErr((e as Error).message);
-    } finally {
-      setSampleBusy(false);
-    }
-  }, [id, sampleBusy, loadEvents]);
 
   // --- merge live + historical, dedupe, sort newest-first -------------------
   const liveIds = React.useMemo(
@@ -377,7 +357,7 @@ export default function InspectorPage() {
           className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-border bg-surface px-2.5 text-muted hover:text-text cursor-pointer focus-visible:outline-2"
           aria-label="open command palette"
         >
-          <Command className="h-3.5 w-3.5" />
+          {isMac && <Command className="h-3.5 w-3.5" />}
           <kbd className="font-mono text-[10px]">{modKey}</kbd>
         </button>
         <button
@@ -467,9 +447,13 @@ export default function InspectorPage() {
               ) : endpoint ? (
                 <WaitingEmptyState
                   ingestURL={ingestURL(endpoint.id)}
-                  onSendSample={sendSample}
-                  sending={sampleBusy}
-                  sampleError={sampleErr}
+                  sampleAction={
+                    <SampleSender
+                      endpoint={endpoint}
+                      onSent={loadEvents}
+                      variant="button"
+                    />
+                  }
                 />
               ) : null)}
             {rows.map((r) => (
@@ -480,7 +464,10 @@ export default function InspectorPage() {
                   else rowRefs.current.delete(r.id);
                 }}
                 method={r.method}
-                label={r.event_type || typeLabels[r.id] || r.method}
+                // Prefer the event type, then a body-derived label, then the
+                // request path — never the method, which the row already shows
+                // (U-5: avoids "POST POST").
+                label={r.event_type || typeLabels[r.id] || r.path || "—"}
                 verifyStatus={r.verify_status as VerifyStatus}
                 receivedAtMS={r.received_at_ms}
                 size={r.size}

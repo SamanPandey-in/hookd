@@ -122,7 +122,7 @@ export function SignatureVerifyPanel({
 
       {fix && (
         <p className="px-4 pb-1 pt-0.5 font-mono text-xs leading-relaxed text-muted break-words">
-          Likely fix → {fix}
+          likely fix: {fix}
         </p>
       )}
 

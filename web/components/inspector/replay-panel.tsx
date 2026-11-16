@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { events as eventsApi, ApiError, isUpgradeRequired } from "@/lib/api";
-import type { Endpoint, ReplayResult } from "@/lib/types";
+import type { Endpoint, ReplayResult, VerifyStatus } from "@/lib/types";
 import { FieldLabel } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { ErrorBanner } from "@/components/ui/states";
@@ -39,15 +39,26 @@ export const ReplayPanel = React.forwardRef<
   {
     eventId: string;
     endpoint: Endpoint | null;
+    /** The selected event's verify status — used to default re-sign ON for a
+     *  non-passing event (replaying a FAILED capture unchanged forwards the
+     *  broken signature, almost never what the user wants). U-16. */
+    verifyStatus: VerifyStatus;
     /** Called after any attempt (delivered, blocked, or failed) is recorded. */
     onReplayed: () => void;
     /** Free accounts: replay + re-sign is Pro-only, so render the control
      *  present-but-locked with an upgrade link rather than a working form. */
     locked?: boolean;
   }
->(function ReplayPanel({ eventId, endpoint, onReplayed, locked = false }, ref) {
+>(function ReplayPanel(
+  { eventId, endpoint, verifyStatus, onReplayed, locked = false },
+  ref,
+) {
   const [targetURL, setTargetURL] = React.useState("");
-  const [resign, setResign] = React.useState(false);
+  // Default re-sign ON when this endpoint has a secret and the event didn't
+  // pass — the common case is "fix a failed delivery" (U-16). Still fully
+  // user-overridable; passing events keep the original signature (off).
+  const defaultResign = !!endpoint && endpoint.has_secret && verifyStatus !== "pass";
+  const [resign, setResign] = React.useState(defaultResign);
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<ReplayResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -69,7 +80,9 @@ export const ReplayPanel = React.forwardRef<
     focus: () => inputRef.current?.focus(),
   }));
 
-  // Reset transient output + editor state when the selected event changes.
+  // Reset transient output + editor state when the selected event changes, and
+  // re-apply the re-sign default for the newly-selected event (its verify
+  // status may differ from the previous one). U-16.
   React.useEffect(() => {
     setResult(null);
     setError(null);
@@ -78,7 +91,8 @@ export const ReplayPanel = React.forwardRef<
     setEditedBody("");
     setPristineBody(null);
     setBodyErr(null);
-  }, [eventId]);
+    setResign(defaultResign);
+  }, [eventId, defaultResign]);
 
   // An edited body can never match the original signature, so re-sign is forced
   // on (and the backend rejects an edited body with resign:false). We don't

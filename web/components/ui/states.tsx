@@ -98,6 +98,7 @@ export function WaitingEmptyState({
   onSendSample,
   sending,
   sampleError,
+  sampleAction,
 }: {
   ingestURL: string;
   className?: string;
@@ -109,6 +110,10 @@ export function WaitingEmptyState({
   sending?: boolean;
   /** A failed sample send, surfaced inline (never a toast). */
   sampleError?: string | null;
+  /** A ready-made send-sample control (e.g. the provider-aware SampleSender),
+   *  rendered in place of the built-in onSendSample button. Takes precedence
+   *  (U-2: auto-detect endpoints need a provider picker, not a bare button). */
+  sampleAction?: React.ReactNode;
 }) {
   const curlCmd = curl ?? sampleCurl(ingestURL);
   return (
@@ -131,17 +136,19 @@ export function WaitingEmptyState({
         label="copy ingest url"
       />
 
-      {onSendSample && (
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={sending}
-          onClick={onSendSample}
-        >
-          {sending ? "sending…" : "send a sample event"}
-        </Button>
-      )}
-      {sampleError && (
+      {sampleAction
+        ? sampleAction
+        : onSendSample && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={sending}
+              onClick={onSendSample}
+            >
+              {sending ? "sending…" : "send a sample event"}
+            </Button>
+          )}
+      {!sampleAction && sampleError && (
         <p className="font-mono text-xs" style={{ color: "var(--fail)" }}>
           could not send a sample — {sampleError}
         </p>

@@ -32,6 +32,18 @@ export function DebuggerClient() {
   const [result, setResult] = React.useState<DebugVerifyResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // The result card renders far from the verify button on a tall form, so a
+  // verdict could land off-screen (U-3). After a result arrives, scroll it into
+  // view and move focus to it so the change is obvious — and announced (the
+  // container is an aria-live region).
+  const resultRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!result) return;
+    const el = resultRef.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.focus({ preventScroll: true });
+  }, [result]);
 
   const loadSample = async (p: Provider) => {
     setError(null);
@@ -181,7 +193,14 @@ export function DebuggerClient() {
       </form>
 
       {/* Result column */}
-      <div className="flex flex-col gap-4">
+      <div
+        ref={resultRef}
+        tabIndex={-1}
+        role="region"
+        aria-label="verification result"
+        aria-live="polite"
+        className="flex flex-col gap-4 scroll-mt-20 focus-visible:outline-2 lg:sticky lg:top-20 lg:self-start"
+      >
         {result ? (
           <>
             <SignatureVerifyPanel

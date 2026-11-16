@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Send } from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   endpoints as endpointsApi,
   ingestURL,
@@ -18,6 +18,7 @@ import { ProLock, UpgradePrompt, UpgradeLink } from "@/components/ui/upgrade";
 import { SkeletonRows, ErrorBanner, EmptyState } from "@/components/ui/states";
 import { EndpointCard, type EndpointStats } from "@/components/dashboard/endpoint-card";
 import { OnboardingPanel } from "@/components/dashboard/onboarding";
+import { SampleSender } from "@/components/ui/sample-sender";
 
 function computeStats(events: EventSummary[]): EndpointStats {
   const count = events.length;
@@ -87,7 +88,7 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="font-sans text-xl font-semibold tracking-tight text-text">
-          Endpoints
+          endpoints
         </h1>
         <p className="text-sm text-muted">
           each endpoint has a stable ingest url. point a webhook at it and
@@ -260,7 +261,9 @@ function EndpointsTable({
             stats={stats[ep.id]}
             now={now}
             ingestUrl={ingestURL(ep.id)}
-            action={<SampleButton endpoint={ep} onSent={onChanged} />}
+            action={
+              <SampleSender endpoint={ep} onSent={onChanged} variant="icon" />
+            }
           />
         ))}
       </ul>
@@ -268,64 +271,3 @@ function EndpointsTable({
   );
 }
 
-function SampleButton({
-  endpoint,
-  onSent,
-}: {
-  endpoint: Endpoint;
-  onSent: () => void;
-}) {
-  const [busy, setBusy] = React.useState(false);
-  const [err, setErr] = React.useState<string | null>(null);
-  const errTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  React.useEffect(
-    () => () => {
-      if (errTimer.current) clearTimeout(errTimer.current);
-    },
-    [],
-  );
-
-  const send = async () => {
-    if (busy) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      // No provider → the backend sends a generic sample, so an auto-detect
-      // endpoint can be sampled too (P1-13), not just one with a provider set.
-      await endpointsApi.sendSample(endpoint.id);
-      onSent();
-    } catch (e) {
-      // Surface the failure instead of swallowing it (P1-14). It is transient
-      // (a brief inline note), auto-dismissed so it doesn't linger as stale.
-      setErr(e instanceof ApiError ? e.message : (e as Error).message || "failed");
-      if (errTimer.current) clearTimeout(errTimer.current);
-      errTimer.current = setTimeout(() => setErr(null), 6000);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex shrink-0 flex-col items-end gap-1">
-      <Button
-        variant="ghost"
-        size="icon"
-        disabled={busy}
-        title="send a sample event"
-        aria-label="send a sample event"
-        onClick={send}
-      >
-        <Send className="h-4 w-4" />
-      </Button>
-      {err && (
-        <span
-          role="status"
-          className="max-w-[12rem] text-right font-mono text-[10px] leading-tight"
-          style={{ color: "var(--fail)" }}
-        >
-          sample failed — {err}
-        </span>
-      )}
-    </div>
-  );
-}

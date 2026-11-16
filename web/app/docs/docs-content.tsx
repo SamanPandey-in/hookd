@@ -104,7 +104,7 @@ export function DocsContent() {
         <p className={hint}>
           the response status, latency and body are recorded under{" "}
           <Mono>attempts</Mono>. prefer your own machine?{" "}
-          <Mono>npx hookd listen &lt;id&gt; --forward localhost:3000</Mono>{" "}
+          <Mono>npx hookd listen &lt;id&gt; --forward http://localhost:3000</Mono>{" "}
           streams live events straight to a local server.
         </p>
       </DocSection>

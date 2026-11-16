@@ -5,7 +5,7 @@ import { GalleryClient } from "./gallery-client";
 // Dev-only component gallery: every base component in all states, so the look
 // can be reviewed at a glance. Hidden in production builds.
 export const metadata: Metadata = {
-  title: "Component gallery",
+  title: "component gallery",
   robots: { index: false, follow: false },
 };
 

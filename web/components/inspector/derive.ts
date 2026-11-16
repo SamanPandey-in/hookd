@@ -23,7 +23,8 @@ function parseBody(body: string): Record<string, unknown> | null {
 /**
  * A best-effort, human event-type label for a captured request:
  * GitHub/Shopify expose it in a header; most JSON providers put it in the body
- * (`type` / `event` / `event_type`, or a nested `event.type` for Slack).
+ * (`type` / `event` / `event_type` / `topic` / `action`, or a nested
+ * `event.type` for Slack).
  * Returns null when nothing meaningful is present (callers fall back to path).
  */
 export function deriveEventType(
@@ -38,7 +39,8 @@ export function deriveEventType(
   const obj = parseBody(body);
   if (!obj) return null;
 
-  const direct = obj.type ?? obj.event ?? obj.event_type;
+  const direct =
+    obj.type ?? obj.event ?? obj.event_type ?? obj.topic ?? obj.action;
   if (typeof direct === "string" && direct) return direct;
 
   // Slack event callbacks nest the real type under `event`.

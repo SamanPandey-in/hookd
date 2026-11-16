@@ -26,7 +26,7 @@ const POINTS: { term: string; detail: string }[] = [
   {
     term: "or forward straight to localhost",
     detail:
-      "npx hookd listen <endpoint> --forward localhost:3000 streams live events to your machine, re-signed so verification passes. no tunnel, no ngrok churn.",
+      "npx hookd listen <endpoint> --forward http://localhost:3000 streams live events to your machine, re-signed so verification passes. no tunnel, no ngrok churn.",
   },
   {
     term: "set the response, see the result",

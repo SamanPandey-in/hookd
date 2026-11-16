@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { ThemePicker } from "@/components/theme/theme-picker";
 
 export const metadata: Metadata = {
-  title: "appearance",
+  title: "settings · appearance",
 };
 
 /** Appearance settings — the dashboard theme picker. Renders inside the (app)

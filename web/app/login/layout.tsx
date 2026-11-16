@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 // This segment layout carries the title + noindex (a bare auth gate has no SEO
 // value and should stay out of the index).
 export const metadata: Metadata = {
-  title: "Sign in",
+  title: "sign in",
   robots: { index: false, follow: false },
 };
 

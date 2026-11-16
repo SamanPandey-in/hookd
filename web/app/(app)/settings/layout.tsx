@@ -1,5 +1,13 @@
+import type { Metadata } from "next";
 import * as React from "react";
 import { SettingsNav, SettingsNavMobile } from "@/components/settings/settings-nav";
+
+// Default tab title for /settings/* (U-6). Each child route overrides with a
+// more specific "settings · <section>" title; this is the fallback. Reads
+// "settings · hookd".
+export const metadata: Metadata = {
+  title: "settings",
+};
 
 // Settings section shell (DESIGN §5.3). Wraps every /settings/* child with the
 // section heading and a sub-nav: a left rail on desktop, a horizontally-

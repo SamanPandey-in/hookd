@@ -129,7 +129,7 @@ export const CAUSE_FIX: Record<
     const age = skew ? `${skew}s old` : "outside the tolerance window";
     return `event is ${age}; ${fixWho(
       provider,
-    )} tolerates ${tol}s — you're verifying a stale or replayed event, or this machine's clock is off. Re-send the event, or widen the tolerance only if you understand the replay risk.`;
+    )} tolerates ${tol}s — you're verifying a stale or replayed event, or this machine's clock is off. re-send the event, or widen the tolerance only if you understand the replay risk.`;
   },
 
   encoding_mismatch: (det, provider) => {
@@ -140,18 +140,18 @@ export const CAUSE_FIX: Record<
     const expectedTxt = expected ?? "its canonical encoding";
     return `the digest is correct but encoded as ${wrong}; ${fixWho(
       provider,
-    )} expects ${expectedTxt}. Decode/encode accordingly (Shopify, Standard Webhooks & Twilio = base64; Stripe, GitHub, Razorpay, Slack, Vercel, Lemon Squeezy & Twitch = hex).`;
+    )} expects ${expectedTxt}. decode/encode accordingly (Shopify, Standard Webhooks & Twilio = base64; Stripe, GitHub, Razorpay, Slack, Vercel, Lemon Squeezy & Twitch = hex).`;
   },
 
   body_possibly_altered: (det) => {
     const from = d(det, "received_body_len");
     const to = d(det, "reencoded_body_len");
     const delta = from && to ? ` (${from}→${to} bytes)` : "";
-    return `a middleware re-serialized the JSON before your verifier saw it${delta}. Verify the raw request body, before any body parser touches it.`;
+    return `a middleware re-serialized the JSON before your verifier saw it${delta}. verify the raw request body, before any body parser touches it.`;
   },
 
   unsupported_provider: () =>
-    "no verifier for this provider — pick a supported provider in Settings, or verify this signature scheme yourself.",
+    "no verifier for this provider — pick a supported provider in settings, or verify this signature scheme yourself.",
 };
 
 /** Resolve the "Likely fix →" line for a failed/unverified result. Returns ""

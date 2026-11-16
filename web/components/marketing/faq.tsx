@@ -25,7 +25,7 @@ const ITEMS: QA[] = [
   },
   {
     q: "can i replay to localhost?",
-    a: "v1 replays server-side to a target url — your staging or deployed endpoint — re-signed with a fresh timestamp so replay protection doesn't trip. a localhost-forwarding cli is on the roadmap.",
+    a: "yes. `npx hookd listen <endpoint> --forward http://localhost:3000` streams live events straight to your machine, re-signed with a fresh timestamp so your handler's verify passes — no tunnel, no ngrok churn. server-side replay to a staging or deployed url works too.",
   },
   {
     q: "how does billing work?",

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { share as shareApi } from "@/lib/api";
-import type { EventDetail } from "@/lib/types";
+import type { EventDetail, Provider } from "@/lib/types";
 import { absoluteTime, formatBytes } from "@/lib/utils";
 import { LogoMark } from "@/components/ui/logo-mark";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -93,6 +93,9 @@ export function ShareView({ token }: { token: string }) {
             cause={event.verify_cause}
             summary={event.verify_summary}
             details={event.verify_details}
+            // Show the provider the verify engine resolved for this event
+            // (auto-detected), matching the inspector (U-4).
+            provider={(event.verify_provider || "") as Provider | ""}
           />
 
           <section className="flex flex-col gap-2">
