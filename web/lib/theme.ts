@@ -44,7 +44,19 @@ export const THEME_STORAGE_KEY = "hookd-theme";
 /** The default theme id (brand dark). */
 export const DEFAULT_THEME = "hookd";
 
-export const THEMES: ThemeMeta[] = [
+/**
+ * LAUNCH LINEUP (STANDOUT §2.3 item 14, §6 item 6).
+ *
+ * At launch the picker exposes ONLY the two brand themes (+ the "system"
+ * sentinel below). A user's screenshot must be recognisably hookd, so the
+ * "market themes" below (Dracula, Nord, Tokyo Night, Catppuccin, Singularity)
+ * are NOT wired into the picker — two of them (Dracula, Catppuccin) use the
+ * exact purple DESIGN §8 bans. They are kept intact in POST_LAUNCH_THEMES (and
+ * their CSS stays present-but-dormant in globals.css) so they can ship later as
+ * a "5 new dashboard themes" changelog entry — a free X post. To light them up
+ * post-launch, append `...POST_LAUNCH_THEMES` to THEMES below.
+ */
+const LAUNCH_THEMES: ThemeMeta[] = [
   {
     id: "hookd",
     label: "hookd",
@@ -66,25 +78,6 @@ export const THEMES: ThemeMeta[] = [
     },
   },
   {
-    id: "singularity",
-    label: "Singularity",
-    blurb: "Warm graphite, monochrome — a quiet, terminal-grade dark.",
-    group: "dark",
-    swatch: {
-      bg: "#131210",
-      surface: "#191715",
-      surfaceHi: "#2b2826",
-      border: "#312d2b",
-      text: "#f4f4f1",
-      muted: "#b2ada9",
-      accent: "#f4f4f1",
-      onAccent: "#191615",
-      pass: "#47c289",
-      fail: "#dd4040",
-      warn: "#f4ae34",
-    },
-  },
-  {
     id: "hookd-light",
     label: "hookd light",
     blurb: "The house palette on cool off-white.",
@@ -101,6 +94,35 @@ export const THEMES: ThemeMeta[] = [
       pass: "#3f6212",
       fail: "#d62828",
       warn: "#9a5b00",
+    },
+  },
+];
+
+/**
+ * Held back for a post-launch "themes" changelog drop. NOT rendered by the
+ * picker and NOT in THEME_IDS, so next-themes will not treat them as applyable
+ * and a stale account value pointing at one falls back to the brand default.
+ * Their token blocks remain in globals.css (dormant — no selector reaches them)
+ * so turning them back on is a one-line change here.
+ */
+export const POST_LAUNCH_THEMES: ThemeMeta[] = [
+  {
+    id: "singularity",
+    label: "Singularity",
+    blurb: "Warm graphite, monochrome — a quiet, terminal-grade dark.",
+    group: "dark",
+    swatch: {
+      bg: "#131210",
+      surface: "#191715",
+      surfaceHi: "#2b2826",
+      border: "#312d2b",
+      text: "#f4f4f1",
+      muted: "#b2ada9",
+      accent: "#f4f4f1",
+      onAccent: "#191615",
+      pass: "#47c289",
+      fail: "#dd4040",
+      warn: "#f4ae34",
     },
   },
   {
@@ -200,6 +222,12 @@ export const THEMES: ThemeMeta[] = [
   },
 ];
 
+/**
+ * The themes the picker renders — launch set only. Swap to
+ * `[...LAUNCH_THEMES, ...POST_LAUNCH_THEMES]` to re-expose the market themes.
+ */
+export const THEMES: ThemeMeta[] = LAUNCH_THEMES;
+
 /** All valid theme ids, in picker order — pass straight to next-themes. */
 export const THEME_IDS: string[] = THEMES.map((t) => t.id);
 
@@ -242,9 +270,11 @@ export const SYSTEM_THEME: SystemThemeMeta = {
 };
 
 /**
- * Whether a stored/account value is a theme the app can apply: one of the 8
- * explicit ids OR the "system" sentinel. Used by the picker's mount logic so a
- * server-saved `me.theme === "system"` is honored rather than ignored.
+ * Whether a stored/account value is a theme the app can apply: one of the
+ * launch ids (THEME_IDS) OR the "system" sentinel. Used by the picker's mount
+ * logic so a server-saved `me.theme === "system"` is honored rather than
+ * ignored. A value pointing at a held-back post-launch theme is NOT applyable,
+ * so it correctly falls back to the brand default.
  */
 export function isThemeChoice(value: string): boolean {
   return value === SYSTEM_THEME_ID || THEME_IDS.includes(value);

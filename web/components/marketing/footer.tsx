@@ -11,6 +11,7 @@ const PRODUCT_LINKS = [
   { href: "/debugger", label: "signature debugger" },
   { href: "/docs", label: "docs" },
   { href: "/pricing", label: "pricing" },
+  { href: "/changelog", label: "changelog" },
   { href: "/#faq", label: "faq" },
   { href: "/login", label: "sign in" },
 ];

@@ -15,24 +15,20 @@ import { Button } from "@/components/ui/button";
 // logged-in free user, or sends a logged-out visitor to login first.
 
 const FREE_FEATURES = [
-  "a stable ingest url that never expires",
-  "live capture + full raw-request inspect",
-  "basic signature verify (pass / fail)",
-  "free signature debugger — see why any webhook fails, no signup",
-  "7-day history, capped events",
-  "sample payloads to build against",
+  "2 endpoints with stable ingest urls that never expire",
+  "live capture + the exact raw request (headers in order, raw bytes)",
+  "signature verify on all 10 providers — pass / fail",
+  "7 days of history",
+  "sample payloads per provider",
 ];
 
 /** Exported so the in-app account page shows the same split — no drift. */
 export const PRO_FEATURES = [
-  "verify-explain: the exact cause + the likely fix, every provider",
-  "replay, edit + re-sign to any target url",
-  "forward live events to localhost — npx hookd listen",
-  "long / unlimited retention",
-  "search + filter your whole history",
-  "response control: set status, headers, body",
-  "share a captured event by link",
-  "more endpoints",
+  "the why: exact cause + likely fix on every failed signature",
+  "replay, edit + re-sign to any url · npx hookd listen to localhost",
+  "25 endpoints · 90-day history · search + filter",
+  "set the response (status, headers, body) to exercise retries",
+  "read-only share links",
 ];
 
 export type Cycle = "monthly" | "annual";
@@ -163,16 +159,9 @@ export function PricingPlans({ className }: { className?: string }) {
             borderColor: "color-mix(in oklab, var(--accent) 28%, var(--border))",
           }}
         >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex flex-col gap-1">
-              <h3 className="font-sans text-lg font-semibold text-text">pro</h3>
-              <p className="text-sm text-muted">
-                the full debug + replay loop.
-              </p>
-            </div>
-            <span className="rounded-sm border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted">
-              recommended
-            </span>
+          <div className="flex flex-col gap-1">
+            <h3 className="font-sans text-lg font-semibold text-text">pro</h3>
+            <p className="text-sm text-muted">the full debug + replay loop.</p>
           </div>
           <div className="flex items-baseline gap-1.5">
             <span className="font-mono text-4xl font-medium tabular-nums text-text">

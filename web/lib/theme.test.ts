@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   THEMES,
   THEME_IDS,
+  POST_LAUNCH_THEMES,
   DEFAULT_THEME,
   type ThemeSwatch,
 } from "./theme";
@@ -40,9 +41,15 @@ describe("theme registry", () => {
     expect(THEME_IDS).toContain(DEFAULT_THEME);
   });
 
-  it("includes the Singularity themes", () => {
-    expect(THEME_IDS).toContain("singularity");
-    expect(THEME_IDS).toContain("singularity-light");
+  it("exposes only the two brand themes in the picker (launch set)", () => {
+    expect(THEME_IDS).toEqual(["hookd", "hookd-light"]);
+  });
+
+  it("holds the market themes back but keeps them intact for later", () => {
+    const extra = POST_LAUNCH_THEMES.map((t) => t.id);
+    expect(extra).toContain("singularity");
+    expect(extra).toContain("singularity-light");
+    for (const id of extra) expect(THEME_IDS).not.toContain(id);
   });
 
   it("every theme has a complete swatch of valid 6-digit hex colors", () => {

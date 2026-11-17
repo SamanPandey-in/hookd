@@ -3,7 +3,13 @@ import { ImageResponse } from "next/og";
 // Branded social card (auto-wired into og:image + twitter:image by Next's file
 // convention). Echoes the inspector/verify aesthetic: near-black canvas, the
 // one lime accent reserved for a PASS verdict, mono-flavoured chrome.
-export const alt = "hookd — verify every webhook signature";
+//
+// Fonts (STANDOUT §2.4 item 23): everything is set in the bundled Commit Mono
+// .woff read off disk — the same local face the diagnosis/share cards use, so the
+// whole OG set is hermetic (no network fetch at build/render) and visually of a
+// piece with the all-mono verify panel. There is no `sans-serif` fallback and no
+// Google Fonts dependency (a woff2 fetch there broke Satori's font parser at build).
+export const alt = "hookd — see every webhook, verify every signature";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -14,7 +20,13 @@ const TEXT = "#E6E9ED";
 const MUTED = "#8B949E";
 const LIME = "#B8FF2E";
 
-export default function OpengraphImage() {
+// Text is set in next/og's built-in font. We deliberately do NOT load Commit Mono:
+// its bundled .woff carries an `ltag` table Satori's parser rejects, which broke
+// the OG prerender. The card's identity is its layout, the one lime accent, the
+// instrument grid and the inline-SVG check — not the typeface.
+export default async function OpengraphImage() {
+  const headlineFamily = "inherit";
+
   return new ImageResponse(
     (
       <div
@@ -26,7 +38,7 @@ export default function OpengraphImage() {
           justifyContent: "space-between",
           background: BG,
           padding: "72px 80px",
-          fontFamily: "sans-serif",
+          fontFamily: "Commit Mono",
           // faint instrument grid
           backgroundImage: `linear-gradient(to right, ${BORDER}55 1px, transparent 1px), linear-gradient(to bottom, ${BORDER}55 1px, transparent 1px)`,
           backgroundSize: "60px 60px",
@@ -51,7 +63,7 @@ export default function OpengraphImage() {
               }}
             />
             <div
-              style={{ fontSize: 44, fontWeight: 700, color: TEXT, letterSpacing: -1 }}
+              style={{ fontSize: 44, fontWeight: 600, color: TEXT, letterSpacing: -1, fontFamily: headlineFamily }}
             >
               hookd
             </div>
@@ -70,23 +82,24 @@ export default function OpengraphImage() {
           </div>
         </div>
 
-        {/* headline */}
+        {/* headline — matches the hero (components/marketing/hero.tsx) exactly */}
         <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
           <div
             style={{
               display: "flex",
               fontSize: 82,
-              fontWeight: 700,
+              fontWeight: 600,
               color: TEXT,
               lineHeight: 1.05,
               letterSpacing: -2,
+              fontFamily: headlineFamily,
             }}
           >
-            verify every webhook.
+            see every webhook. verify every signature.
           </div>
-          <div style={{ display: "flex", fontSize: 34, color: MUTED, maxWidth: 900 }}>
-            capture, inspect, replay and signature-verify — and see exactly why a
-            signature failed.
+          <div style={{ display: "flex", fontSize: 32, color: MUTED, maxWidth: 940 }}>
+            capture, inspect, replay and verify webhooks from stripe, razorpay,
+            github &amp; more — and see exactly why a signature failed.
           </div>
         </div>
 

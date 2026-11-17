@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# hookd — web
 
-## Getting Started
+The Next.js frontend for **hookd**, a webhook signature debugger. It is the live
+inspector, the public signature debugger, the dashboard, and the marketing site.
 
-First, run the development server:
+hookd captures webhooks at a stable ingest URL, verifies their signatures, and —
+when verification fails — names the exact cause (body bytes differ from what was
+signed, timestamp outside tolerance, encoding mismatch, wrong secret) across
+Stripe, GitHub, Razorpay, Shopify, Slack, Standard Webhooks (Svix/Dodo), Twilio,
+Vercel, Lemon Squeezy and Twitch. Any captured event can be replayed, re-signed
+with a fresh signature and timestamp, to your endpoint or your localhost.
+
+## Stack
+
+- Next.js 16 (App Router) · React 19 · TypeScript
+- Tailwind CSS v4, base-ui components — the *Graphite & Signal* design system
+- Commit Mono + Hanken Grotesk
+- Vitest for unit tests
+
+## Run it locally
+
+Requires Node >= 20. Install dependencies and start the dev server:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app runs at [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Backend
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The frontend talks to the Go API over HTTP (with `credentials: "include"`). Point
+it at a running backend with `NEXT_PUBLIC_API_URL`; it defaults to
+`http://localhost:8099`.
 
-## Learn More
+```bash
+# in ../server
+go run ./cmd/server
+```
 
-To learn more about Next.js, take a look at the following resources:
+See `../server` for backend setup (database, OAuth, and environment variables).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Command | What it does |
+|---|---|
+| `npm run dev` | Start the dev server at `:3000` |
+| `npm run build` | Production build |
+| `npm run start` | Serve the production build |
+| `npm run lint` | ESLint |
+| `npm test` | Run the Vitest suite |
 
-## Deploy on Vercel
+## Docs
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `../docs/DESIGN.md` — the UI/UX source of truth (tokens, component specs, voice)
+- `../docs/CLI.md` — the `hookd` CLI (`npx hookd listen`)
+- `../docs/PRODUCT.md` — product scope and roadmap
+- In-app docs live at `/docs`, including a "copy for agents" brief
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+
+AGPL-3.0-only for the server and web app; MIT for the `hookd` CLI. See the
+`LICENSE` file at the repository root.

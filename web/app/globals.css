@@ -77,11 +77,21 @@
 }
 
 /* =============================================================================
-   Market themes — recognizable dev palettes, mapped onto the SAME token set so
-   the whole app (bg, panels, accent, grid, aura, status trio) re-skins from one
-   switch. All are dark, so color-scheme stays dark (the :root default). Accent
-   reads fine as text on each bg; buttons use accent-fill + on-accent (the dark
-   bg) exactly as hookd does. Hexes match lib/theme.ts swatches 1:1.
+   Market themes — DORMANT AT LAUNCH (STANDOUT §2.3 item 14, §6 item 6).
+   These blocks are kept present-but-dormant: at launch the picker exposes only
+   the two brand themes (see lib/theme.ts — these ids live in POST_LAUNCH_THEMES,
+   not THEME_IDS), so no data-theme="…" selector below is ever reached and the
+   app always screenshots as recognisably hookd. Two of them (Dracula,
+   Catppuccin) use the exact purple DESIGN §8 bans — another reason they stay
+   held back. Do NOT delete: they ship later as a "5 new dashboard themes"
+   changelog drop (add `...POST_LAUNCH_THEMES` to THEMES in lib/theme.ts to
+   light them up). Hexes match lib/theme.ts swatches 1:1.
+
+   Recognizable dev palettes, mapped onto the SAME token set so the whole app
+   (bg, panels, accent, grid, aura, status trio) re-skins from one switch. All
+   are dark, so color-scheme stays dark (the :root default). Accent reads fine
+   as text on each bg; buttons use accent-fill + on-accent (the dark bg) exactly
+   as hookd does.
    ========================================================================== */
 :root[data-theme="dracula"] {
   --bg: #282a36;

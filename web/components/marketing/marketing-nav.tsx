@@ -2,9 +2,9 @@ import Link from "next/link";
 import { LogoMark } from "@/components/ui/logo-mark";
 import { Button } from "@/components/ui/button";
 
-// Landing nav (DESIGN §5.2). Hairline-separated, 56px, surface over the page
-// base — no shadow. One primary action only (start free); `pricing` and the
-// `live demo` anchor are the only other links so there are no dead routes.
+// Landing nav (DESIGN §5.2: docs/pricing/changelog + start). Hairline-separated,
+// 56px, surface over the page base — no shadow. One primary action only (start
+// free); every other link resolves to a real route (no dead clicks).
 export function MarketingNav() {
   return (
     <header className="sticky top-0 z-30 border-b border-border/70 bg-bg/70 backdrop-blur-md">
@@ -35,6 +35,12 @@ export function MarketingNav() {
             className="rounded-sm px-2 py-1.5 font-sans text-sm text-muted transition-colors duration-[80ms] hover:text-text focus-visible:outline-2"
           >
             pricing
+          </Link>
+          <Link
+            href="/changelog"
+            className="hidden rounded-sm px-2 py-1.5 font-sans text-sm text-muted transition-colors duration-[80ms] hover:text-text focus-visible:outline-2 sm:inline-block"
+          >
+            changelog
           </Link>
           <Link href="/login" className="rounded-sm focus-visible:outline-2">
             <Button variant="primary" size="sm">

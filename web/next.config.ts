@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
   // statically generate by default and the app's client routes just work.
   cacheComponents: false,
   partialPrefetching: false,
+  // Set by the Next.js security upgrade (16.4.4 → 16.4.6).
+  experimental: {
+    agentUpgrade: "security",
+  },
   turbopack: {
     rules: {
       "*.css": {

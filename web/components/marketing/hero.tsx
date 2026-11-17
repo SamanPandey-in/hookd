@@ -2,6 +2,12 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Section } from "@/components/marketing/section";
 import { LiveInspectorDemo } from "@/components/marketing/live-inspector-demo";
+import { PROVIDERS } from "@/lib/types";
+
+// The ten providers whose signatures the verify engine understands, derived from
+// the single source of truth (lib/types.ts) so the strip and the "10 providers"
+// copy can never drift. Underscored ids read as words in the quiet mono strip.
+const PROVIDER_NAMES = PROVIDERS.map((p) => p.replace(/_/g, " "));
 
 // Proof row (DESIGN §5.2): honest, defensible claims — not logos, not invented
 // stats. Numbers that are true today: ten providers shipped, one-click replay,
@@ -45,9 +51,9 @@ export function Hero() {
         </h1>
 
         <p className="max-w-md text-base leading-relaxed text-muted">
-          capture, inspect, replay and verify webhooks from stripe, razorpay,
-          github &amp; more. when verification fails, we tell you exactly why —
-          and replay the exact event, re-signed, to your endpoint.
+          capture, inspect and replay webhooks from stripe, github, razorpay and
+          7 more. when a signature fails, hookd names the actual cause — and
+          replays the exact event, re-signed, to your endpoint or your localhost.
         </p>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -56,13 +62,13 @@ export function Hero() {
               start free
             </Button>
           </Link>
-          <Link href="#demo" className="rounded-sm focus-visible:outline-2">
+          <Link href="/debugger" className="rounded-sm focus-visible:outline-2">
             <Button variant="secondary" size="lg">
-              live demo
+              debug a signature
             </Button>
           </Link>
           <span className="font-mono text-xs text-muted">
-            no card. point a webhook and watch.
+            no card. no signup for the debugger.
           </span>
         </div>
 
@@ -79,6 +85,22 @@ export function Hero() {
             </div>
           ))}
         </dl>
+
+        {/* Provider strip (DESIGN §3.6): the ten verified schemes as a quiet mono
+            wordmark row, hairline-separated, no logos (no trademark risk). */}
+        <ul
+          aria-label="verified providers"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1.5 font-mono text-[11px] text-muted"
+        >
+          {PROVIDER_NAMES.map((name) => (
+            <li
+              key={name}
+              className="border-l border-border pl-3 first:border-l-0 first:pl-0"
+            >
+              {name}
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* The live instrument, lit by its own lime aura + a soft floor-glow —
