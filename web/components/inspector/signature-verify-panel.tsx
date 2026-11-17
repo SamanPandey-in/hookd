@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { FieldLabel } from "@/components/ui/panel";
 import { UpgradeLink } from "@/components/ui/upgrade";
 import { CAUSE_HINT, fixForCause, providerLabel } from "@/lib/providers";
+import { ShareDiagnosis } from "@/components/inspector/share-diagnosis";
 import type { Provider, VerifyCause, VerifyStatus } from "@/lib/types";
 
 // THE hero component (DESIGN §1, §6). Boldness is spent here and in the arrival
@@ -26,6 +27,11 @@ export interface SignatureVerifyPanelProps {
   lockedWhy?: boolean;
   /** Where the locked-why upgrade link points (defaults to the account page). */
   upgradeHref?: string;
+  /** Show the "share this diagnosis" affordance on a FAIL/UNVERIFIED verdict.
+   *  Defaults true for real verdicts (inspector, debugger, share view). Marketing
+   *  demos and gallery samples pass false — a canned illustration isn't the
+   *  viewer's own verdict to share. */
+  shareable?: boolean;
   className?: string;
 }
 
@@ -56,6 +62,7 @@ export function SignatureVerifyPanel({
   animate = true,
   lockedWhy = false,
   upgradeHref,
+  shareable = true,
   className,
 }: SignatureVerifyPanelProps) {
   const pass = status === "pass";
@@ -79,6 +86,11 @@ export function SignatureVerifyPanel({
   // PASS), and suppressed when the WHY is locked (free accounts): the fix is
   // part of the WHY the lock already gates. One quiet muted line, not a callout.
   const fix = !pass && !locked ? fixForCause(cause, details, provider) : "";
+
+  // "share this diagnosis" (STANDOUT §3.1): only on FAIL/UNVERIFIED, never on
+  // PASS, and suppressed while the WHY is locked (free users) — the card would
+  // otherwise leak the gated explanation. Builds a non-secret /og/diagnosis link.
+  const showShare = shareable && !pass && !locked;
 
   return (
     <div
@@ -147,7 +159,13 @@ export function SignatureVerifyPanel({
           ))}
         </dl>
       )}
-      {(locked || detailEntries.length === 0) && <div className="pb-3" />}
+      {showShare && (
+        <div className="px-4 pb-3 pt-1.5">
+          <ShareDiagnosis result={{ status, provider, cause, summary, details }} />
+        </div>
+      )}
+
+      {!showShare && (locked || detailEntries.length === 0) && <div className="pb-3" />}
     </div>
   );
 }

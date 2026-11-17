@@ -76,6 +76,7 @@ export function VerifyExplain() {
                 details={c.details}
                 provider={c.provider}
                 animate={false}
+                shareable={false}
                 className="flex-1"
               />
             </div>

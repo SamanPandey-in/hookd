@@ -17,11 +17,79 @@ import {
   parseHeaderLines,
 } from "@/app/debugger/samples";
 
-// F3 — the public, no-signup signature debugger. Paste a secret + the raw
-// headers/body of a webhook and get back the exact verdict + WHY + Likely fix
-// the paid inspector shows (SignatureVerifyPanel with lockedWhy=false). Samples
-// are signed client-side so they PASS on load; edit the body to watch it FAIL.
-// Nothing is stored — the backend endpoint is pure.
+// F3 — the public, no-signup signature debugger. It OPENS ON A VERDICT
+// (STANDOUT §3.3): on mount it auto-loads + verifies the Stripe sample so the
+// result column shows a lime PASS immediately — no empty dashed form on first
+// paint. Four "break it" chips then mutate the current input and re-verify,
+// flipping the panel to a SPECIFIC cause (that is the demo GIF). Samples are
+// signed client-side so they PASS; nothing you paste is stored.
+
+// ---- Pure crypto / encoding / header helpers for the "break it" chips -------
+// Mirror the Stripe scheme (the auto-loaded sample) exactly: HMAC-SHA256 over
+// `t.body`, hex-encoded, in the `Stripe-Signature: t=…,v1=…` header.
+
+const enc = new TextEncoder();
+
+function toHex(buf: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function hmacSha256Hex(secret: string, msg: string): Promise<string> {
+  const k = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  return toHex(await crypto.subtle.sign("HMAC", k, enc.encode(msg)));
+}
+
+function hexToBase64(hex: string): string {
+  const clean = hex.length % 2 === 0 ? hex : hex.slice(0, -1);
+  let s = "";
+  for (let i = 0; i < clean.length; i += 2) {
+    s += String.fromCharCode(parseInt(clean.slice(i, i + 2), 16));
+  }
+  return btoa(s);
+}
+
+function getHeaderValue(text: string, name: string): string | null {
+  const lower = name.toLowerCase();
+  for (const line of text.split(/\r?\n/)) {
+    const idx = line.indexOf(":");
+    if (idx <= 0) continue;
+    if (line.slice(0, idx).trim().toLowerCase() === lower) {
+      return line.slice(idx + 1).trim();
+    }
+  }
+  return null;
+}
+
+function setHeaderValue(text: string, name: string, value: string): string {
+  const lower = name.toLowerCase();
+  let found = false;
+  const out = text.split(/\r?\n/).map((line) => {
+    const idx = line.indexOf(":");
+    if (idx > 0 && line.slice(0, idx).trim().toLowerCase() === lower) {
+      found = true;
+      return `${name}: ${value}`;
+    }
+    return line;
+  });
+  if (!found) out.push(`${name}: ${value}`);
+  return out.join("\n");
+}
+
+interface VerifyFields {
+  provider: Provider | "";
+  secret: string;
+  headersText: string;
+  bodyText: string;
+  urlText: string;
+}
 
 export function DebuggerClient() {
   const [provider, setProvider] = React.useState<Provider | "">("");
@@ -31,7 +99,15 @@ export function DebuggerClient() {
   const [urlText, setUrlText] = React.useState("");
   const [result, setResult] = React.useState<DebugVerifyResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState(false);
+  // Start busy: the mount effect immediately auto-verifies the Stripe sample, so
+  // the result column shows a "verifying" card (not the empty dashed box) on the
+  // very first paint, then flips to the lime PASS (STANDOUT §3.3).
+  const [busy, setBusy] = React.useState(true);
+
+  // Twilio is the only scheme whose signature is URL-bound, so only it (and
+  // auto-detect, which might resolve to it) needs the Request URL field.
+  const showUrlField = provider === "twilio" || provider === "";
+
   // The result card renders far from the verify button on a tall form, so a
   // verdict could land off-screen (U-3). After a result arrives, scroll it into
   // view and move focus to it so the change is obvious — and announced (the
@@ -45,49 +121,162 @@ export function DebuggerClient() {
     el.focus({ preventScroll: true });
   }, [result]);
 
-  const loadSample = async (p: Provider) => {
-    setError(null);
-    setResult(null);
-    try {
-      const s = await signSample(p);
-      setProvider(s.provider);
-      setSecret(s.secret);
-      setHeadersText(headersToLines(s.headers));
-      setBodyText(s.body);
-      setUrlText(s.url ?? "");
-    } catch (e) {
-      setError(`could not build sample (${String(e)})`);
-    }
-  };
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (busy) return;
+  // Core verify path — takes EXPLICIT fields (never state) so the auto-run and
+  // the "break it" chips can verify freshly mutated input without a state-timing
+  // race. The one place the paste reaches the public verify engine.
+  const verifyFields = React.useCallback(async (f: VerifyFields) => {
     setBusy(true);
     setError(null);
     setResult(null);
     try {
       const res = await debugVerify({
-        provider,
-        secret,
-        headers: parseHeaderLines(headersText),
-        body: bodyText,
-        url: urlText,
+        provider: f.provider,
+        secret: f.secret,
+        headers: parseHeaderLines(f.headersText),
+        body: f.bodyText,
+        url: f.urlText,
       });
       setResult(res);
     } catch (e2) {
-      setError(
-        e2 instanceof DebugError ? e2.message : (e2 as Error).message,
-      );
+      setError(e2 instanceof DebugError ? e2.message : (e2 as Error).message);
     } finally {
       setBusy(false);
     }
+  }, []);
+
+  const loadSample = React.useCallback(
+    async (p: Provider, autoVerify = false) => {
+      setError(null);
+      if (!autoVerify) setResult(null);
+      try {
+        const s = await signSample(p);
+        const nextHeaders = headersToLines(s.headers);
+        setProvider(s.provider);
+        setSecret(s.secret);
+        setHeadersText(nextHeaders);
+        setBodyText(s.body);
+        setUrlText(s.url ?? "");
+        if (autoVerify) {
+          await verifyFields({
+            provider: s.provider,
+            secret: s.secret,
+            headersText: nextHeaders,
+            bodyText: s.body,
+            urlText: s.url ?? "",
+          });
+        }
+      } catch (e) {
+        setError(`could not build sample (${String(e)})`);
+        setBusy(false);
+      }
+    },
+    [verifyFields],
+  );
+
+  // Open on a verdict: auto-load + verify the Stripe sample exactly once.
+  const didInit = React.useRef(false);
+  React.useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+    void loadSample("stripe", true);
+  }, [loadSample]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    await verifyFields({ provider, secret, headersText, bodyText, urlText });
   };
+
+  // ---- "break it" chips: mutate the CURRENT input + re-verify -------------
+  // Each flips the panel to a specific cause. Tuned for the auto-loaded Stripe
+  // sample (the demo); "wrong secret" and "re-serialize the body" are scheme-
+  // agnostic, "make it stale" and "hex ↔ base64" act on the Stripe-Signature.
+
+  const breakStale = async () => {
+    // Re-sign with a timestamp ~400s in the past: the signature is valid for
+    // that t, but t is outside tolerance → timestamp_out_of_tolerance.
+    const t = Math.floor(Date.now() / 1000) - 400;
+    const sig = await hmacSha256Hex(secret, `${t}.${bodyText}`);
+    const nextHeaders = setHeaderValue(headersText, "Stripe-Signature", `t=${t},v1=${sig}`);
+    setHeadersText(nextHeaders);
+    await verifyFields({ provider, secret, headersText: nextHeaders, bodyText, urlText });
+  };
+
+  const breakSecret = async () => {
+    // A secret the signature was not computed with → signature_mismatch.
+    const nextSecret = secret ? `${secret}_rotated` : "whsec_wrong_secret";
+    setSecret(nextSecret);
+    await verifyFields({ provider, secret: nextSecret, headersText, bodyText, urlText });
+  };
+
+  const breakBody = async () => {
+    // Re-serialize (pretty-print) the JSON: the raw bytes now differ from what
+    // was signed → body_possibly_altered (whitespace differs). Falls back to a
+    // trailing-space tweak for non-JSON bodies.
+    let nextBody = bodyText;
+    try {
+      nextBody = JSON.stringify(JSON.parse(bodyText), null, 2);
+    } catch {
+      nextBody = `${bodyText} `;
+    }
+    if (nextBody === bodyText) nextBody = `${bodyText} `;
+    setBodyText(nextBody);
+    await verifyFields({ provider, secret, headersText, bodyText: nextBody, urlText });
+  };
+
+  const breakEncoding = async () => {
+    // Re-encode the correct digest as base64 where hex is expected →
+    // encoding_mismatch (the bytes are right, the encoding is wrong).
+    const sig = getHeaderValue(headersText, "Stripe-Signature");
+    let nextHeaders = headersText;
+    const m = sig?.match(/v1=([0-9a-fA-F]+)/);
+    if (sig && m) {
+      const b64 = hexToBase64(m[1]);
+      nextHeaders = setHeaderValue(
+        headersText,
+        "Stripe-Signature",
+        sig.replace(/v1=[0-9a-fA-F]+/, `v1=${b64}`),
+      );
+    }
+    setHeadersText(nextHeaders);
+    await verifyFields({ provider, secret, headersText: nextHeaders, bodyText, urlText });
+  };
+
+  const CHIPS: { key: string; label: string; run: () => Promise<void> }[] = [
+    { key: "stale", label: "make it stale", run: breakStale },
+    { key: "secret", label: "wrong secret", run: breakSecret },
+    { key: "body", label: "re-serialize the body", run: breakBody },
+    { key: "encoding", label: "hex ↔ base64", run: breakEncoding },
+  ];
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_minmax(320px,420px)]">
       {/* Input column */}
       <form onSubmit={submit} className="flex flex-col gap-4">
+        {/* Break-it chips — above the input (STANDOUT §3.3). Mutate what's
+            loaded and re-verify to flip the verdict to a specific cause. */}
+        <div className="flex flex-col gap-2">
+          <FieldLabel>Break it</FieldLabel>
+          <div className="flex flex-wrap gap-1.5">
+            {CHIPS.map((c) => (
+              <Button
+                key={c.key}
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={() => void c.run()}
+              >
+                {c.label}
+              </Button>
+            ))}
+          </div>
+          <p className="font-mono text-[11px] text-muted">
+            tweak the signed request and watch the verdict flip to the exact
+            reason — no guessing which part broke.
+          </p>
+        </div>
+
         <div className="flex flex-col gap-2">
           <FieldLabel>Load a sample</FieldLabel>
           <div className="flex flex-wrap gap-1.5">
@@ -133,25 +322,27 @@ export function DebuggerClient() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="debug-url">
-            <FieldLabel>Request URL (Twilio)</FieldLabel>
-          </label>
-          <input
-            id="debug-url"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            value={urlText}
-            onChange={(e) => setUrlText(e.target.value)}
-            placeholder="https://your-host/i/ep_… — the exact url the webhook was sent to"
-            className="h-9 w-full rounded-sm border border-border bg-surface-hi px-3 font-mono text-xs text-text placeholder:text-muted focus-visible:outline-2"
-          />
-          <p className="font-mono text-[11px] text-muted">
-            only twilio needs this — its signature is bound to the exact url it
-            called. other providers ignore it.
-          </p>
-        </div>
+        {showUrlField && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="debug-url">
+              <FieldLabel>Request URL (Twilio)</FieldLabel>
+            </label>
+            <input
+              id="debug-url"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              value={urlText}
+              onChange={(e) => setUrlText(e.target.value)}
+              placeholder="https://your-host/i/ep_… — the exact url the webhook was sent to"
+              className="h-9 w-full rounded-sm border border-border bg-surface-hi px-3 font-mono text-xs text-text placeholder:text-muted focus-visible:outline-2"
+            />
+            <p className="font-mono text-[11px] text-muted">
+              only twilio needs this — its signature is bound to the exact url it
+              called. other providers ignore it.
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="debug-headers">
@@ -224,6 +415,12 @@ export function DebuggerClient() {
               </Link>
             </div>
           </>
+        ) : busy ? (
+          <div className="rounded-md border border-border bg-surface px-4 py-10 text-center">
+            <p className="font-mono text-xs leading-relaxed text-muted">
+              verifying the signature…
+            </p>
+          </div>
         ) : (
           <div className="rounded-md border border-dashed border-border bg-surface px-4 py-10 text-center">
             <p className="font-mono text-xs leading-relaxed text-muted">

@@ -268,6 +268,7 @@ export function LiveInspectorDemo() {
               details={frame.panel.details}
               provider={frame.panel.provider}
               animate={!reduced}
+              shareable={false}
             />
           </div>
           <DemoTabs />

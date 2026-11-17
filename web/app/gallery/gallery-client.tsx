@@ -233,6 +233,7 @@ export function GalleryClient() {
             summary="timestamp skew 612s > 300s tolerance"
             details={FAIL_DETAILS}
             provider="stripe"
+            shareable={false}
           />
           <SignatureVerifyPanel
             status="fail"
@@ -240,12 +241,14 @@ export function GalleryClient() {
             summary="computed v1 ≠ header v1 (check you're signing the raw body, not a re-encoded copy)"
             details={{ computed: "5f3a…e7c1a", provided: "a91c…0f2b" }}
             provider="github"
+            shareable={false}
           />
           <SignatureVerifyPanel
             status="unknown"
             cause="missing_secret"
             summary="no signing secret configured for this endpoint"
             provider=""
+            shareable={false}
           />
         </div>
       </Section>
