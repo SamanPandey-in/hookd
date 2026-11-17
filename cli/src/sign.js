@@ -14,7 +14,26 @@ function hmac256(key, bufOrStr) {
 
 const asBuf = (body) => (Buffer.isBuffer(body) ? body : Buffer.from(body));
 
-/** Providers we can re-sign, mirroring verify.Provider string values. */
+// The full provider set the server's verify engine understands. Mirrors
+// web/lib/types.ts `PROVIDERS` exactly — the single source of truth. These are
+// all accepted for plain listening/forwarding; re-signing is only implemented
+// for the subset in RESIGNABLE below.
+export const PROVIDERS = [
+  'stripe',
+  'github',
+  'razorpay',
+  'shopify',
+  'standard_webhooks',
+  'slack',
+  'twilio',
+  'vercel',
+  'lemon_squeezy',
+  'twitch',
+];
+
+/** Providers we can re-sign, mirroring verify.Provider string values. A proper
+ *  subset of PROVIDERS: the others are accepted for forwarding but cannot be
+ *  re-signed from the CLI (we forward their original signature headers). */
 export const RESIGNABLE = new Set(['stripe', 'github', 'razorpay', 'shopify', 'standard_webhooks']);
 
 /**

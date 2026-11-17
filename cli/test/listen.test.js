@@ -7,14 +7,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { runListen } from '../src/listen.js';
-import { signHeaders } from '../src/sign.js';
+import { runListen, renderBanner, makeLogger } from '../src/listen.js';
+import { signHeaders, PROVIDERS, RESIGNABLE } from '../src/sign.js';
+import { buildRequest } from '../src/forward.js';
+import { parseListenArgs } from '../src/cli.js';
 
 const KEY = 'whk_live_testkey';
 const SECRET = 'whsec_test_secret';
 
 function silentLogger() {
-  return { info() {}, warn() {}, error() {}, forward() {} };
+  return { banner() {}, info() {}, warn() {}, error() {}, forward() {}, forwardError() {} };
 }
 
 function listen(server) {
@@ -246,4 +248,102 @@ test('reconnects after the stream drops and keeps forwarding', async () => {
 
   await close(stub.server);
   await close(sinkServer);
+});
+
+// ---- Unit tests for the new CLI surface -------------------------------------
+
+function baseArgs(extra = []) {
+  return ['ep_1', '--forward', 'http://localhost:3000', '--key', KEY, ...extra];
+}
+
+test('--provider accepts all 10 providers', () => {
+  assert.equal(PROVIDERS.length, 10);
+  for (const p of PROVIDERS) {
+    const opts = parseListenArgs(baseArgs(['--provider', p]));
+    assert.equal(opts.provider, p, `provider ${p} should be accepted`);
+  }
+});
+
+test('--provider rejects an unknown provider', () => {
+  assert.throws(() => parseListenArgs(baseArgs(['--provider', 'paypal'])), /unknown --provider/);
+});
+
+test('--json flag parses to opts.json', () => {
+  assert.equal(parseListenArgs(baseArgs()).json, false);
+  assert.equal(parseListenArgs(baseArgs(['--json'])).json, true);
+});
+
+test('a non-re-signable provider is accepted for listening (not rejected)', () => {
+  // twilio/slack/vercel/… are valid providers but not in RESIGNABLE.
+  const notResignable = PROVIDERS.filter((p) => !RESIGNABLE.has(p));
+  assert.ok(notResignable.length > 0);
+  for (const p of notResignable) {
+    assert.doesNotThrow(() => parseListenArgs(baseArgs(['--provider', p, '--resign'])));
+  }
+});
+
+test('buildRequest with --resign on a non-re-signable provider forwards original headers + an honest note', () => {
+  const detail = {
+    method: 'POST',
+    headers: [{ name: 'X-Twilio-Signature', value: 'orig_sig_value' }],
+  };
+  const out = buildRequest(detail, Buffer.from('{}'), {
+    resign: true,
+    secret: 'shh',
+    provider: 'twilio',
+    nowSec: 1,
+  });
+  assert.equal(out.resigned, false);
+  assert.match(out.note, /not re-signable/);
+  // Original signature header is preserved unchanged.
+  assert.equal(out.headers.get('X-Twilio-Signature'), 'orig_sig_value');
+});
+
+test('renderBanner draws a boxed card with endpoint, forward, re-sign and api', () => {
+  const plain = (s) => String(s);
+  const c = { bold: plain, gray: plain, dim: plain, cyan: plain, yellow: plain, green: plain, red: plain };
+  const text = renderBanner(
+    { endpointId: 'ep_123', forwardUrl: 'http://localhost:3000/webhooks', api: 'https://api.hookd.dev', resign: true, provider: 'stripe' },
+    c,
+  );
+  const lines = text.split('\n');
+  assert.ok(lines[0].startsWith('╭'), 'top border');
+  assert.ok(lines[0].includes('hookd listen'), 'title');
+  assert.ok(lines[lines.length - 1].startsWith('╰'), 'bottom border');
+  assert.ok(text.includes('ep_123'));
+  assert.ok(text.includes('http://localhost:3000/webhooks'));
+  assert.ok(text.includes('on · stripe'));
+  assert.ok(text.includes('api.hookd.dev'), 'api host only, not full url');
+  // All lines are the same visible width (box stays aligned).
+  const widths = new Set(lines.map((l) => [...l].length));
+  assert.equal(widths.size, 1, `expected uniform width, got ${[...widths].join(',')}`);
+});
+
+test('--json logger emits one JSON object per event with the expected shape', () => {
+  const written = [];
+  const orig = process.stdout.write;
+  process.stdout.write = (s) => { written.push(s); return true; };
+  try {
+    const log = makeLogger({ json: true });
+    log.forward({ status: 200, ms: 42, provider: 'stripe', eventType: 'checkout.session.completed', resigned: true });
+    log.forwardError({ id: 'ev_9', ms: 5, provider: 'twilio', eventType: '-', error: 'boom' });
+  } finally {
+    process.stdout.write = orig;
+  }
+  assert.equal(written.length, 2);
+  const ok = JSON.parse(written[0]);
+  assert.deepEqual(ok, {
+    ok: true,
+    status: 200,
+    ms: 42,
+    provider: 'stripe',
+    event_type: 'checkout.session.completed',
+    resigned: true,
+    note: null,
+  });
+  const err = JSON.parse(written[1]);
+  assert.equal(err.ok, false);
+  assert.equal(err.status, null);
+  assert.equal(err.error, 'boom');
+  assert.equal(err.provider, 'twilio');
 });

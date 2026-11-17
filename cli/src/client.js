@@ -2,7 +2,7 @@
 // `Authorization: Bearer <key>` — the stream, event-detail and event-body
 // routes all accept API keys (server/internal/api/api.go).
 //
-// API contract (base defaults to http://localhost:8099):
+// API contract (base defaults to https://api.hookd.dev):
 //   GET {api}/api/endpoints/{endpointId}/stream  -> text/event-stream
 //   GET {api}/api/events/{eventId}               -> JSON event metadata
 //   GET {api}/api/events/{eventId}/body          -> raw captured body bytes

@@ -4,7 +4,13 @@
 import { parseSSE } from './sse.js';
 import { makeClient, ApiError } from './client.js';
 import { buildRequest } from './forward.js';
+import { RESIGNABLE } from './sign.js';
 import { colors } from './colors.js';
+
+// Column widths for the aligned per-event lines. The provider field fits the
+// longest provider name ("standard_webhooks" = 17).
+const PROVIDER_COL = 17;
+const MS_COL = 6;
 
 const aborted = (signal) => Boolean(signal && signal.aborted);
 
@@ -40,21 +46,131 @@ export function inlineBody(parsed) {
   return Buffer.from(parsed.body, 'utf8');
 }
 
-export function defaultLogger() {
+// ---- Boxed start banner ------------------------------------------------------
+// Renders a card like:
+//   ╭─ hookd listen ───────────────────────────╮
+//   │ endpoint   ep_123                          │
+//   │ forward    http://localhost:3000/webhooks  │
+//   │ re-sign    on · stripe                     │
+//   │ api        api.hookd.dev                    │
+//   ╰────────────────────────────────────────────╯
+// Box-drawing is plain Unicode (not ANSI), so it survives NO_COLOR; only the
+// values are tinted, and the tinting is applied after width is measured on the
+// raw text so columns stay aligned.
+export function renderBanner(opts, c = colors) {
+  const { endpointId, forwardUrl, api, resign, provider } = opts;
+  let apiHost;
+  try {
+    apiHost = new URL(api).host || api;
+  } catch {
+    apiHost = String(api);
+  }
+
+  let resignRaw;
+  let resignColor;
+  if (!resign) {
+    resignRaw = 'off';
+    resignColor = c.dim;
+  } else if (!provider) {
+    resignRaw = 'on · auto-detect';
+    resignColor = c.cyan;
+  } else if (RESIGNABLE.has(provider)) {
+    resignRaw = `on · ${provider}`;
+    resignColor = c.cyan;
+  } else {
+    resignRaw = `on · ${provider} (not re-signable — original headers)`;
+    resignColor = c.yellow;
+  }
+
+  const rows = [
+    { label: 'endpoint', value: endpointId, color: c.bold },
+    { label: 'forward', value: forwardUrl, color: c.bold },
+    { label: 're-sign', value: resignRaw, color: resignColor },
+    { label: 'api', value: apiHost, color: (s) => s },
+  ];
+
+  const labelW = Math.max(...rows.map((r) => r.label.length));
+  const rawLines = rows.map((r) => `${r.label.padEnd(labelW)}  ${r.value}`);
+  const titleRaw = '─ hookd listen ';
+  // W = total visible width incl. borders; innerW = padded content width.
+  const innerW = Math.max(titleRaw.length - 1, ...rawLines.map((s) => s.length));
+  const W = innerW + 4;
+
+  const top = `╭─ ${c.bold('hookd listen')} ${'─'.repeat(W - (titleRaw.length + 2))}╮`;
+  const bottom = `╰${'─'.repeat(W - 2)}╯`;
+  const valueFieldW = innerW - labelW - 2;
+  const body = rows.map((r) => {
+    const pad = ' '.repeat(Math.max(0, valueFieldW - r.value.length));
+    return `│ ${c.gray(r.label.padEnd(labelW))}  ${r.color(r.value)}${pad} │`;
+  });
+  return [top, ...body, bottom].join('\n');
+}
+
+// ---- Loggers -----------------------------------------------------------------
+// Human mode: a boxed banner + aligned, glyphed per-event lines on stdout.
+// JSON mode (--json): one JSON object per forwarded event on stdout (no ANSI,
+// no banner), with all human/status chatter routed to stderr so stdout pipes
+// cleanly.
+export function makeLogger({ json = false, c = colors } = {}) {
+  if (json) {
+    const emit = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
+    return {
+      json: true,
+      banner: () => {},
+      info: (m) => process.stderr.write(`hookd ${m}\n`),
+      warn: (m) => process.stderr.write(`hookd ${m}\n`),
+      error: (m) => process.stderr.write(`hookd ${m}\n`),
+      forward: ({ status, ms, provider, eventType, resigned, note }) =>
+        emit({
+          ok: status >= 200 && status < 300,
+          status,
+          ms,
+          provider: provider || null,
+          event_type: eventType || null,
+          resigned: Boolean(resigned),
+          note: note || null,
+        }),
+      forwardError: ({ id, ms, provider, eventType, error }) =>
+        emit({
+          ok: false,
+          status: null,
+          ms,
+          id,
+          provider: provider || null,
+          event_type: eventType || null,
+          error,
+        }),
+    };
+  }
+
+  const msCol = (ms) => c.dim(`${ms}ms`.padStart(MS_COL));
+  const provCol = (p) => (p || '-').padEnd(PROVIDER_COL);
   return {
-    info: (m) => process.stdout.write(`${colors.gray('hookd')} ${m}\n`),
-    warn: (m) => process.stderr.write(`${colors.yellow('hookd')} ${m}\n`),
-    error: (m) => process.stderr.write(`${colors.red('hookd')} ${m}\n`),
-    forward: (status, ms, label, req) => {
+    json: false,
+    banner: (text) => process.stdout.write(`${text}\n`),
+    info: (m) => process.stdout.write(`${c.gray('hookd')} ${m}\n`),
+    warn: (m) => process.stderr.write(`${c.yellow('hookd')} ${m}\n`),
+    error: (m) => process.stderr.write(`${c.red('hookd')} ${m}\n`),
+    forward: ({ status, ms, provider, eventType, resigned, note }) => {
       const ok = status >= 200 && status < 300;
-      const code = ok ? colors.green(String(status)) : colors.red(String(status));
-      const arrow = ok ? colors.green('→') : colors.yellow('→');
-      let line = `${arrow} ${code}  ${colors.dim(`${ms}ms`)}  ${label}`;
-      if (req.resigned) line += `  ${colors.cyan('re-signed')}`;
-      if (req.note) line += `  ${colors.dim(`(${req.note})`)}`;
+      const raw = String(status).padStart(3);
+      const glyph = ok ? c.green('✓') : c.red('✕');
+      const code = ok ? c.green(raw) : c.red(raw);
+      let line = `${glyph} ${code}  ${msCol(ms)}  ${provCol(provider)}  ${eventType || '-'}`;
+      if (resigned) line += `  ${c.cyan('re-signed')}`;
+      else if (note) line += `  ${c.dim(`(${note})`)}`;
       process.stdout.write(`${line}\n`);
     },
+    forwardError: ({ ms, provider, eventType, error }) => {
+      const line = `${c.red('✕')} ${c.red('ERR')}  ${msCol(ms)}  ${provCol(provider)}  ${eventType || '-'}  ${c.dim(`forward failed: ${error}`)}`;
+      process.stderr.write(`${line}\n`);
+    },
   };
+}
+
+// Back-compat alias; prefer makeLogger().
+export function defaultLogger() {
+  return makeLogger({ json: false });
 }
 
 async function forwardOne(client, parsed, ctx) {
@@ -64,8 +180,9 @@ async function forwardOne(client, parsed, ctx) {
     return;
   }
   const started = Date.now();
+  let detail = null;
   try {
-    const detail = await client.getEvent(id, ctx.signal);
+    detail = await client.getEvent(id, ctx.signal);
     const body = hasInlineBody(parsed)
       ? inlineBody(parsed)
       : await client.getEventBody(id, ctx.signal);
@@ -81,12 +198,25 @@ async function forwardOne(client, parsed, ctx) {
     // Drain the body so the socket is freed.
     try { await res.arrayBuffer(); } catch { /* ignore */ }
 
-    const ms = Date.now() - started;
-    const label = `${req.provider || '-'}  ${detail.event_type || '-'}`;
-    ctx.logger.forward(res.status, ms, label, req);
+    ctx.logger.forward({
+      status: res.status,
+      ms: Date.now() - started,
+      provider: req.provider,
+      eventType: detail.event_type,
+      resigned: req.resigned,
+      note: req.note,
+    });
   } catch (err) {
     if (aborted(ctx.signal)) return;
-    ctx.logger.error(`forward of ${id} failed: ${err.message}`);
+    const info = {
+      id,
+      ms: Date.now() - started,
+      provider: ctx.provider || (detail && detail.verify_provider) || null,
+      eventType: detail && detail.event_type,
+      error: err.message,
+    };
+    if (ctx.logger.forwardError) ctx.logger.forwardError(info);
+    else ctx.logger.error(`forward of ${id} failed: ${err.message}`);
   }
 }
 
@@ -101,21 +231,21 @@ export async function runListen(opts) {
     api,
     key,
     resign = false,
+    json = false,
     secret = null,
     provider = null,
     signal,
-    logger = defaultLogger(),
     fetchImpl = fetch,
     backoffBaseMs = 500,
     backoffMaxMs = 30000,
     nowSec,
   } = opts;
+  const logger = opts.logger || makeLogger({ json });
 
   const client = makeClient({ api, key, fetchImpl });
 
-  logger.info(
-    `forwarding ${client.base} endpoint ${colors.bold(endpointId)} → ${colors.bold(forwardUrl)}${resign ? colors.cyan(' [re-sign]') : ''}`,
-  );
+  if (logger.banner) logger.banner(renderBanner({ endpointId, forwardUrl, api: client.base, resign, provider }));
+  logger.info('listening for events… (ctrl-c to stop)');
 
   let attempt = 0;
   while (!aborted(signal)) {

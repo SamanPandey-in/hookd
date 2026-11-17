@@ -5,7 +5,7 @@ machine — optionally **re-signed** so your handler's signature verification
 still passes. One command, zero install, no new runtime dependencies.
 
 ```bash
-npx hookd listen <endpointId> --forward <localURL> [--resign] [--key whk_live_…] [--api <url>]
+npx hookd listen <endpointId> --forward <localURL> [--resign] [--json] [--key whk_live_…] [--api <url>]
 ```
 
 ## Quick start
@@ -16,11 +16,32 @@ npx hookd listen <endpointId> --forward <localURL> [--resign] [--key whk_live_�
 HOOKD_API_KEY=whk_live_… npx hookd listen ep_123 --forward http://localhost:3000/webhooks
 ```
 
-Each forwarded request prints one line:
+On start it prints a boxed summary, then one aligned line per forwarded event —
+lime `✓` for a 2xx from your handler, red `✕` otherwise:
 
 ```
-→ 200  42ms  stripe  charge.succeeded
-→ 500  18ms  stripe  invoice.paid        # non-2xx from your handler, in yellow — the listener keeps going
+╭─ hookd listen ───────────────────────────╮
+│ endpoint  ep_123                          │
+│ forward   http://localhost:3000/webhooks  │
+│ re-sign   on · stripe                     │
+│ api       api.hookd.dev                   │
+╰───────────────────────────────────────────╯
+✓ 200    42ms  stripe             checkout.session.completed  re-signed
+✓ 200     7ms  github             push
+✕ 500    18ms  standard_webhooks  invoice.paid
+```
+
+Colors are disabled when stdout isn't a TTY or `NO_COLOR` is set; the box is
+plain Unicode and stays.
+
+### `--json` (for piping)
+
+With `--json`, the banner and status chatter go to stderr and each forwarded
+event is written to stdout as one JSON object, no ANSI:
+
+```bash
+npx hookd listen ep_123 --forward http://localhost:3000 --json | jq .
+{"ok":true,"status":200,"ms":42,"provider":"stripe","event_type":"checkout.session.completed","resigned":true,"note":null}
 ```
 
 ## Options
@@ -29,11 +50,12 @@ Each forwarded request prints one line:
 |------|-----|---------|---------|
 | `<endpointId>` | — | — | The hookd endpoint to subscribe to (positional, required) |
 | `--forward <url>` | — | — | Local URL that receives each captured event (required) |
-| `--resign` | — | off | Re-sign the forwarded request with a fresh signature (needs `--secret`) |
+| `--resign` | — | off | Re-sign the forwarded request with a fresh signature (needs `--secret`). Re-signable: `stripe`, `github`, `razorpay`, `shopify`, `standard_webhooks`. Any other provider forwards its original signature headers unchanged (with a note) |
+| `--json` | — | off | Emit one JSON object per forwarded event to stdout (no ANSI, no banner on stdout); for piping |
 | `--key <whk_…>` | `HOOKD_API_KEY` | — | hookd API key (required) |
 | `--secret <s>` | `HOOKD_SIGNING_SECRET` | — | Signing secret, used only with `--resign`. Never stored or logged |
-| `--provider <name>` | — | auto-detect | Force provider for re-signing: `stripe`, `github`, `shopify`, `razorpay`, `standard_webhooks` |
-| `--api <url>` | `HOOKD_API_URL` | `http://localhost:8099` | hookd API base URL |
+| `--provider <name>` | — | auto-detect | Force the provider (used for re-signing and event labels). One of: `stripe`, `github`, `razorpay`, `shopify`, `standard_webhooks`, `slack`, `twilio`, `vercel`, `lemon_squeezy`, `twitch` |
+| `--api <url>` | `HOOKD_API_URL` | `https://api.hookd.dev` | hookd API base URL |
 | `-h, --help` | — | — | Show help |
 | `-v, --version` | — | — | Show version |
 

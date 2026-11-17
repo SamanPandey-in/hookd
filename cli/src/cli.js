@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { runListen } from './listen.js';
+import { PROVIDERS, RESIGNABLE } from './sign.js';
 
 const DEFAULT_API = 'https://api.hookd.dev';
 
@@ -25,13 +26,18 @@ Usage:
 Options:
   --forward <url>     Local URL to deliver each captured event to (required)
   --resign            Re-sign the forwarded request with a fresh signature so
-                      your handler's verification passes (needs --secret)
+                      your handler's verification passes (needs --secret).
+                      Re-signable providers: ${[...RESIGNABLE].join(', ')}.
+                      Other providers forward their original signature headers.
+  --json              Print one JSON object per forwarded event to stdout (for
+                      piping); no ANSI, no banner on stdout.
   --key <whk_...>     hookd API key (or env HOOKD_API_KEY)
   --secret <s>        Signing secret, used only with --resign (or env
                       HOOKD_SIGNING_SECRET). Never stored or logged.
-  --provider <name>   Force the provider for re-signing: stripe | github |
-                      shopify | razorpay | standard_webhooks (auto-detected
-                      from the captured signature headers when omitted)
+  --provider <name>   Force the provider (used to re-sign, and labels events).
+                      One of: ${PROVIDERS.join(', ')}
+                      (auto-detected from the captured signature headers when
+                      omitted)
   --api <url>         hookd API base URL (or env HOOKD_API_URL)
                       [default: ${DEFAULT_API}]
   -h, --help          Show this help
@@ -51,11 +57,11 @@ Examples:
 
 /**
  * Parse the `listen` subcommand arguments.
- * @returns {{endpointId: string, forward: string, resign: boolean, key?: string,
- *            secret?: string, provider?: string, api: string}}
+ * @returns {{endpointId: string, forward: string, resign: boolean, json: boolean,
+ *            key?: string, secret?: string, provider?: string, api: string}}
  */
 export function parseListenArgs(args) {
-  const opts = { resign: false, api: process.env.HOOKD_API_URL || DEFAULT_API };
+  const opts = { resign: false, json: false, api: process.env.HOOKD_API_URL || DEFAULT_API };
   const positional = [];
 
   for (let i = 0; i < args.length; i += 1) {
@@ -67,6 +73,9 @@ export function parseListenArgs(args) {
         break;
       case '--resign':
         opts.resign = true;
+        break;
+      case '--json':
+        opts.json = true;
         break;
       case '--key':
         opts.key = args[++i];
@@ -103,8 +112,8 @@ export function parseListenArgs(args) {
   if (!opts.endpointId) throw new Error('missing <endpointId>. See `hookd --help`.');
   if (!opts.forward) throw new Error('missing --forward <localURL>. See `hookd --help`.');
   if (!opts.key) throw new Error('missing API key. Pass --key or set HOOKD_API_KEY.');
-  if (opts.provider && !['stripe', 'github', 'shopify', 'razorpay', 'standard_webhooks'].includes(opts.provider)) {
-    throw new Error(`unsupported --provider "${opts.provider}". Use one of: stripe, github, shopify, razorpay, standard_webhooks.`);
+  if (opts.provider && !PROVIDERS.includes(opts.provider)) {
+    throw new Error(`unknown --provider "${opts.provider}". Use one of: ${PROVIDERS.join(', ')}.`);
   }
   return opts;
 }
@@ -150,6 +159,7 @@ export async function main(argv) {
       api: opts.api,
       key: opts.key,
       resign: opts.resign,
+      json: opts.json,
       secret: opts.secret || null,
       provider: opts.provider || null,
       signal: controller.signal,
